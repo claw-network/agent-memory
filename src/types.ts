@@ -1,4 +1,7 @@
 export type PrimaryEcosystem = "node" | "python" | "rust" | "go" | "generic";
+export type GenerationMode = "init" | "update";
+export type MemoryFileId = "readme" | "project-map" | "current-focus" | "gotchas" | "next-steps";
+export type ManagedFileState = "missing" | "managed" | "unmanaged";
 
 export interface WorkspaceModule {
   name: string;
@@ -46,10 +49,24 @@ export interface MemoryFiles {
   entrySnippet: string;
 }
 
+export interface MemoryTarget {
+  fileId: MemoryFileId;
+  path: string;
+  content: string;
+}
+
 export interface PlannedChange {
-  kind: "create" | "patch" | "backup" | "skip";
+  kind: "create" | "patch" | "backup" | "overwrite" | "skip";
   path: string;
   note: string;
+}
+
+export interface ManagedFileOwnership {
+  state: ManagedFileState;
+  expectedFileId: MemoryFileId;
+  actualFileId: string | null;
+  path: string;
+  existingContent?: string;
 }
 
 export interface InitOptions {

@@ -1,4 +1,4 @@
-import type { ProjectScan, ValidationResult } from "../types";
+import type { GenerationMode, ProjectScan, ValidationResult } from "../types";
 
 interface NextStepCard {
   title: string;
@@ -39,7 +39,11 @@ function describeProject(scan: ProjectScan): string {
   return "a software repository";
 }
 
-function buildNextStepCards(scan: ProjectScan, validations: ValidationResult[]): NextStepCard[] {
+function buildNextStepCards(
+  scan: ProjectScan,
+  validations: ValidationResult[],
+  mode: GenerationMode,
+): NextStepCard[] {
   const cards: NextStepCard[] = [];
   const hasValidationResults = validations.length > 0;
   const hasFailures = validations.some((result) => result.status === "failed");
@@ -47,7 +51,9 @@ function buildNextStepCards(scan: ProjectScan, validations: ValidationResult[]):
   if (!hasValidationResults) {
     cards.push({
       title: "Establish a validation baseline",
-      why: "The initial memory snapshot is static-only. Running one or two common checks turns current-focus.md into a real operational baseline.",
+      why: `${
+        mode === "init" ? "The initial" : "This"
+      } memory snapshot is static-only. Running one or two common checks turns current-focus.md into a real operational baseline.`,
       start: scan.validationCandidates.length > 0
         ? `Run the most common commands first: ${scan.validationCandidates
             .slice(0, 2)
@@ -140,7 +146,7 @@ export function renderProjectMap(scan: ProjectScan): string {
       ? scan.workspaceModules
           .map((moduleInfo) => `- \`${moduleInfo.path}\` (${moduleInfo.name}): ${moduleInfo.role}.`)
           .join("\n")
-      : "- No workspace modules were detected during init.";
+      : "- No workspace modules were detected during the current scan.";
 
   return [
     "# Project Map",
@@ -191,8 +197,12 @@ export function renderProjectMap(scan: ProjectScan): string {
   ].join("\n");
 }
 
-export function renderCurrentFocus(scan: ProjectScan, validations: ValidationResult[]): string {
-  const activeFollowUps = buildNextStepCards(scan, validations)
+export function renderCurrentFocus(
+  scan: ProjectScan,
+  validations: ValidationResult[],
+  mode: GenerationMode,
+): string {
+  const activeFollowUps = buildNextStepCards(scan, validations, mode)
     .slice(0, 4)
     .map((card) => card.title);
   const validationSection =
@@ -200,7 +210,7 @@ export function renderCurrentFocus(scan: ProjectScan, validations: ValidationRes
       ? [
           "## Validation Snapshot",
           "",
-          "- Status: Not run during init.",
+          `- Status: Not run during ${mode}.`,
           `- Suggested next command(s): ${
             scan.validationCandidates.length > 0
               ? scan.validationCandidates
@@ -222,7 +232,7 @@ export function renderCurrentFocus(scan: ProjectScan, validations: ValidationRes
   return [
     "# Current Focus",
     "",
-    `Generated during init on ${scan.generatedAt}.`,
+    `Generated during ${mode} on ${scan.generatedAt}.`,
     "",
     "## Current State",
     "",
@@ -239,7 +249,7 @@ export function renderCurrentFocus(scan: ProjectScan, validations: ValidationRes
       [
         scan.workspaceModules.length > 0
           ? `${scan.workspaceModules.length} workspace module(s) were detected from manifests or workspace patterns.`
-          : "No workspace modules were detected during init.",
+          : "No workspace modules were detected during the current scan.",
         scan.denseSourceDirs.length > 0
           ? `The highest-density source area is ${scan.denseSourceDirs[0]}.`
           : "No dense source directory stood out during the static scan.",
@@ -247,7 +257,7 @@ export function renderCurrentFocus(scan: ProjectScan, validations: ValidationRes
           ? `Static scan flagged ${scan.gotchas.length} potential gotcha signal(s).`
           : "Static scan did not surface strong project-specific gotcha signals yet.",
       ],
-      "No additional important facts were inferred during init.",
+      "No additional important facts were inferred during the current scan.",
     ),
     "",
     "## Active Follow-Ups",
@@ -278,8 +288,12 @@ export function renderGotchas(scan: ProjectScan): string {
   ].join("\n");
 }
 
-export function renderNextSteps(scan: ProjectScan, validations: ValidationResult[]): string {
-  const cards = buildNextStepCards(scan, validations);
+export function renderNextSteps(
+  scan: ProjectScan,
+  validations: ValidationResult[],
+  mode: GenerationMode,
+): string {
+  const cards = buildNextStepCards(scan, validations, mode);
 
   return [
     "# Next Steps",

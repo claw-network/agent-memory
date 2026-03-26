@@ -2,6 +2,7 @@
 
 import { cwd, exit } from "node:process";
 import { runInit } from "./commands/init";
+import { runUpdate } from "./commands/update";
 
 interface ParsedArgs {
   command: string | null;
@@ -13,9 +14,11 @@ function printHelp(): void {
   console.log("");
   console.log("Usage:");
   console.log("  agent-memory init [--yes]");
+  console.log("  agent-memory update [--yes]");
   console.log("");
   console.log("Commands:");
   console.log("  init    Generate docs/agent-memory and wire in a Project Memory entry snippet.");
+  console.log("  update  Refresh managed project memory and repair missing memory pieces.");
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -61,6 +64,13 @@ async function main(): Promise<void> {
   switch (parsed.command) {
     case "init": {
       const code = await runInit({ cwd: cwd(), yes: parsed.yes });
+      if (code !== 0) {
+        exit(code);
+      }
+      return;
+    }
+    case "update": {
+      const code = await runUpdate({ cwd: cwd(), yes: parsed.yes });
       if (code !== 0) {
         exit(code);
       }

@@ -6,6 +6,10 @@ Bootstrap durable project memory for developers and coding agents.
 npx agent-memory init
 ```
 
+```bash
+npx agent-memory update
+```
+
 `agent-memory` creates a `docs/agent-memory/` directory in your project and wires in a lightweight entry section so future collaborators know where to look first.
 
 ## What it generates
@@ -38,6 +42,7 @@ If none exist, it creates a minimal `AGENTS.md`.
 
 ```bash
 npx agent-memory init
+npx agent-memory update
 ```
 
 ### Non-interactive
@@ -48,12 +53,28 @@ npx agent-memory init --yes
 
 This accepts the write plan automatically and skips optional validation commands.
 
+```bash
+npx agent-memory update --yes
+```
+
 ## Merge behavior
 
 - Missing memory files are created
-- Existing memory files are preserved
+- Managed memory files are refreshed in place
+- Legacy or unmanaged memory files are preserved
 - A generated `.generated.bak.*` file is written when content already exists
 - Existing entry snippets are not duplicated
+- `update` can repair missing memory files and missing entry snippets
+
+## Managed files
+
+Generated memory files now include a small marker comment such as:
+
+```md
+<!-- agent-memory:file=project-map version=1 managed=true -->
+```
+
+`agent-memory update` only rewrites files that carry a matching managed marker. Older or manually maintained files are preserved and get a generated backup instead.
 
 ## Validation behavior
 
@@ -75,14 +96,15 @@ Examples:
 npm install
 npm run build
 node dist/cli.js init --yes
+node dist/cli.js update --yes
 npm pack
 npx --yes --package=./agent-memory-0.1.0.tgz agent-memory init --yes
+npx --yes --package=./agent-memory-0.1.0.tgz agent-memory update --yes
 ```
 
 ## Planned commands
 
 These are intentionally not part of v1 yet:
 
-- `agent-memory update`
 - `agent-memory doctor`
 - `agent-memory validate`

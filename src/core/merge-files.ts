@@ -1,6 +1,6 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
-import type { PlannedChange } from "../types";
+import type { ManagedFileOwnership, PlannedChange } from "../types";
 
 const ENTRY_START = "<!-- agent-memory:start -->";
 const ENTRY_END = "<!-- agent-memory:end -->";
@@ -22,6 +22,10 @@ function makeBackupPath(path: string): string {
   const ext = extname(path);
   const base = basename(path, ext);
   return join(dirname(path), `${base}.generated.bak${ext}`);
+}
+
+export function getGeneratedBackupPath(path: string): string {
+  return makeBackupPath(path);
 }
 
 function insertEntrySnippet(existing: string, snippet: string): string {
@@ -68,6 +72,25 @@ export async function applyFileWrite(path: string, content: string): Promise<voi
 
   const existing = await readFile(path, "utf8");
   if (existing === content) {
+    return;
+  }
+
+  await writeFile(makeBackupPath(path), content, "utf8");
+}
+
+export async function applyManagedFileWrite(
+  path: string,
+  content: string,
+  ownership: ManagedFileOwnership,
+): Promise<void> {
+  await ensureParent(path);
+
+  if (ownership.existingContent === content) {
+    return;
+  }
+
+  if (ownership.state === "missing" || ownership.state === "managed") {
+    await writeFile(path, content, "utf8");
     return;
   }
 
