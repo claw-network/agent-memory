@@ -18,18 +18,6 @@ This will:
 - rewrite `docs/agent-memory/*.md`
 - insert or replace the top-level project memory block
 
-## Important Breaking Change
-
-This version does not preserve the previous static/managed-marker model.
-
-If your repository already used the old format, treat this as a rebuild:
-
-```bash
-npx agent-memory init
-```
-
-Do not expect `update` to migrate legacy files. `update` only works after the canonical state file exists.
-
 ## Runtime Control
 
 If you want to force a specific runtime for the analysis pass:

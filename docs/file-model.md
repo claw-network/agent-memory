@@ -35,7 +35,7 @@ The `bundle` contains the durable memory payload:
 
 ## Projection Files
 
-The readable projection lives in:
+Projection files live in:
 
 - `docs/agent-memory/README.md`
 - `docs/agent-memory/project-map.md`

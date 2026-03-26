@@ -45,7 +45,7 @@ This is the machine-readable source of truth. It contains:
 - `docs/agent-memory/gotchas.md`
 - `docs/agent-memory/next-steps.md`
 
-These are generated projections of the canonical state. They are meant for humans to read quickly, while `validate` can still audit them through versioned hash markers.
+These are generated projections of the canonical state. They are optimized for quick reading and reuse, while `validate` can still audit them through versioned hash markers.
 
 ## Command Semantics
 

@@ -9,14 +9,7 @@ Canonical project memory for developers and coding agents.
 `agent-memory` builds repository memory in two layers:
 
 - it generates a canonical memory bundle in `/.agent-memory/state.json`
-- it projects that bundle into `docs/agent-memory/` for humans
-
-This is a breaking model change:
-
-- `init` rebuilds memory from repository evidence into the canonical-state system
-- `update` refreshes that same state instead of patching loosely managed markdown
-- `validate` audits state integrity, projection alignment, and validation freshness
-- old managed-marker repositories are not migrated in place; rerun `init`
+- it projects that bundle into `docs/agent-memory/` as readable repository docs
 
 ## Installation
 
@@ -32,7 +25,7 @@ Once installed, run the local CLI with `npx agent-memory ...`.
 
 ## How It Works
 
-`agent-memory` does not treat markdown files as the source of truth anymore.
+`agent-memory` does not treat markdown files as the source of truth.
 
 Instead, it:
 
@@ -50,7 +43,7 @@ The canonical source of truth is:
 
 - `/.agent-memory/state.json`
 
-Human-readable projections live in:
+Readable projections live in:
 
 - `docs/agent-memory/README.md`
 - `docs/agent-memory/project-map.md`
@@ -130,22 +123,10 @@ Most repositories still lose high-value engineering context:
 ## Design Principles
 
 - canonical machine-readable state first
-- human-readable projections second
+- readable projections second
 - repository-grounded synthesis instead of static template guessing
 - versioned markers and hash-based validation
 - short, durable docs over sprawling internal wikis
-
-## Breaking Change
-
-This release does not preserve the old managed-marker model.
-
-If a repository already uses the previous static/template-based `agent-memory`, rerun:
-
-```bash
-npx agent-memory init
-```
-
-to rebuild it into the new canonical-state model.
 
 ## Learn More
 
