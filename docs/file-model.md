@@ -2,6 +2,8 @@
 
 `agent-memory` uses a fixed five-file model so each piece of context has a clear home.
 
+Inside those files, repeated high-value records are written as small memory units with stable field labels. The files define the category. The units define the smallest reusable record.
+
 ## `README.md`
 
 This file explains how the memory system works inside the target repository.
@@ -37,6 +39,12 @@ It should capture:
 
 It is intentionally not historical. When the state changes, this file should be refreshed, not appended forever.
 
+Recommended unit shape for follow-ups:
+
+- `Why:` why this follow-up matters now
+- `Start:` the cleanest next move
+- `Done when:` the condition that closes the follow-up
+
 ## `gotchas.md`
 
 This file is for traps that are expensive to rediscover.
@@ -50,6 +58,12 @@ Good entries are:
 
 Each entry should stay short and high-signal.
 
+Recommended unit shape for confirmed gotchas:
+
+- `Symptom:` what someone sees when the trap appears
+- `Cause:` the real root cause or hidden boundary
+- `Correct path:` the fix, safe workflow, or source of truth
+
 ## `next-steps.md`
 
 This file gives the next contributor a clean starting point.
@@ -60,6 +74,12 @@ It should answer:
 - why it matters
 - where to start
 - what “done” looks like
+
+Each next step is a memory unit with:
+
+- `Why:`
+- `Start:`
+- `Done when:`
 
 ## Managed Ownership
 

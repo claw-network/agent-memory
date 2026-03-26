@@ -33,6 +33,21 @@ This separation matters because long-lived projects need both:
 
 Putting both into one file usually creates noise. Splitting them makes maintenance lighter and reuse easier.
 
+## Files And Units
+
+`agent-memory` works at two levels:
+
+- files organize context by job
+- memory units organize repeated records inside those files
+
+Examples:
+
+- `next-steps.md` uses follow-up units with `Why:`, `Start:`, and `Done when:`
+- `current-focus.md` reuses that same follow-up unit shape for short operational follow-ups
+- `gotchas.md` uses confirmed gotcha units with `Symptom:`, `Cause:`, and `Correct path:`
+
+This keeps the system compact. Files provide durable categories. Units provide the smallest reusable records. In this first version, unit structure lives in generated templates and docs rather than in stricter parsing or validation rules.
+
 ## Why It Works For Humans And Agents
 
 Developers benefit because the repository becomes easier to re-enter after time away.
@@ -46,6 +61,7 @@ The result is not “AI-specific documentation.” It is a collaboration structu
 - small, durable surface area
 - conservative updates
 - explicit tool ownership
+- files for context categories, units for reusable records
 - readable by humans first, but machine-auditable where needed
 - current state as a snapshot, not a running changelog
 

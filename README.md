@@ -40,6 +40,17 @@ Most projects lose context in the same way:
 
 This is not a generic template dump. It is a role-based memory model: stable map, current state, costly lessons, and immediate action.
 
+## Memory Units
+
+The file model is only one layer of the system.
+
+- Files decide where a kind of context belongs.
+- Memory units decide how repeated high-value records are written inside those files.
+- `next-steps.md` and the follow-up section in `current-focus.md` use `Why:`, `Start:`, and `Done when:` units.
+- `gotchas.md` uses confirmed gotcha units with `Symptom:`, `Cause:`, and `Correct path:`.
+
+This keeps the memory human-readable first while making future parsing and automation easier. It is still a lightweight repository memory layer, not a runtime memory database.
+
 ## Quickstart
 
 ### 1. Initialize project memory

@@ -7,12 +7,43 @@ interface NextStepCard {
   done: string;
 }
 
+interface GotchaUnitTemplate {
+  title: string;
+  symptom: string;
+  cause: string;
+  correctPath: string;
+}
+
 function renderBulletList(items: string[], fallback: string): string {
   if (items.length === 0) {
     return `- ${fallback}`;
   }
 
   return items.map((item) => `- ${item}`).join("\n");
+}
+
+function renderFollowUpUnit(card: NextStepCard, heading: string): string {
+  return [
+    `${heading} ${card.title}`,
+    "",
+    `Why: ${card.why}`,
+    "",
+    `Start: ${card.start}`,
+    "",
+    `Done when: ${card.done}`,
+  ].join("\n");
+}
+
+function renderGotchaUnit(unit: GotchaUnitTemplate): string {
+  return [
+    `### ${unit.title}`,
+    "",
+    `Symptom: ${unit.symptom}`,
+    "",
+    `Cause: ${unit.cause}`,
+    "",
+    `Correct path: ${unit.correctPath}`,
+  ].join("\n");
 }
 
 function describeProject(scan: ProjectScan): string {
@@ -125,6 +156,13 @@ export function renderMemoryReadme(scan: ProjectScan): string {
     "- `gotchas.md`: high-cost traps, noisy failure modes, and subtle boundaries.",
     "- `next-steps.md`: practical starting points for the next contributor.",
     "",
+    "## Memory Units",
+    "",
+    "- Files define the category of context. Memory units define the smallest reusable record inside that category.",
+    "- `next-steps.md` and the follow-up section in `current-focus.md` use `Why:`, `Start:`, and `Done when:` blocks.",
+    "- `gotchas.md` uses confirmed gotcha units with `Symptom:`, `Cause:`, and `Correct path:`.",
+    "- Keep each unit short enough to scan quickly and specific enough to reuse without guessing.",
+    "",
     "## Maintenance rules",
     "",
     "- Update this memory when workspace structure changes.",
@@ -202,9 +240,7 @@ export function renderCurrentFocus(
   validations: ValidationResult[],
   mode: GenerationMode,
 ): string {
-  const activeFollowUps = buildNextStepCards(scan, validations, mode)
-    .slice(0, 4)
-    .map((card) => card.title);
+  const activeFollowUps = buildNextStepCards(scan, validations, mode).slice(0, 3);
   const validationSection =
     validations.length === 0
       ? [
@@ -262,7 +298,9 @@ export function renderCurrentFocus(
     "",
     "## Active Follow-Ups",
     "",
-    renderBulletList(activeFollowUps, "Review and tighten the generated memory after the first manual pass."),
+    activeFollowUps.length > 0
+      ? activeFollowUps.map((card) => renderFollowUpUnit(card, "###")).join("\n\n")
+      : "Review and tighten the generated memory after the first manual pass.",
   ].join("\n");
 }
 
@@ -270,6 +308,12 @@ export function renderGotchas(scan: ProjectScan): string {
   const detected = scan.gotchas.length > 0
     ? scan.gotchas
     : ["No strong project-specific gotchas were inferred from the static scan yet."];
+  const confirmedTemplate = renderGotchaUnit({
+    title: "Replace this placeholder with a real gotcha",
+    symptom: "Describe the confusing failure, message, or behavior that someone is likely to hit.",
+    cause: "Record the real root cause, hidden boundary, or workflow mismatch once it is known.",
+    correctPath: "Explain the safe fix, correct workflow, or authoritative source of truth to follow next time.",
+  });
 
   return [
     "# Gotchas",
@@ -279,6 +323,12 @@ export function renderGotchas(scan: ProjectScan): string {
     "## Auto-Detected Signals",
     "",
     renderBulletList(detected, "No signals detected."),
+    "",
+    "## Confirmed Gotchas",
+    "",
+    "Use one memory unit per real gotcha once the team has confirmed the failure mode.",
+    "",
+    confirmedTemplate,
     "",
     "## Keep This File High-Signal",
     "",
@@ -298,16 +348,7 @@ export function renderNextSteps(
   return [
     "# Next Steps",
     "",
-    ...cards.flatMap((card, index) => [
-      `## ${index + 1}. ${card.title}`,
-      "",
-      `Why: ${card.why}`,
-      "",
-      `Start: ${card.start}`,
-      "",
-      `Done when: ${card.done}`,
-      "",
-    ]),
+    ...cards.flatMap((card, index) => [renderFollowUpUnit({ ...card, title: `${index + 1}. ${card.title}` }, "##"), ""]),
   ]
     .join("\n")
     .trimEnd()
