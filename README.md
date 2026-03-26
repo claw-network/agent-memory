@@ -1,128 +1,118 @@
 # agent-memory
 
-Bootstrap durable project memory for developers and coding agents.
+[![npm version](https://img.shields.io/npm/v/agent-memory)](https://www.npmjs.com/package/agent-memory)
+[![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![node >=18](https://img.shields.io/badge/node-%3E%3D18-417e38)](./package.json)
+
+Durable project memory for developers and coding agents.
+
+`agent-memory` gives a repository a lightweight memory layer that survives across handoffs, chats, PRs, and debugging sessions. It helps teams keep stable project structure, current status, expensive gotchas, and next working steps in one place that both humans and agents can reuse.
 
 ```bash
 npx agent-memory init
 ```
 
-```bash
-npx agent-memory update
-```
+## Why This Exists
 
-```bash
-npx agent-memory validate
-```
+Most projects lose context in the same way:
 
-`agent-memory` creates a `docs/agent-memory/` directory in your project and wires in a lightweight entry section so future collaborators know where to look first.
+- README files explain the product, but not the current engineering reality.
+- Issue threads and PRs contain decisions, but they are noisy and fragmented.
+- Chat history is useful in the moment, but weak as a long-term system of record.
+- Coding agents can move quickly, but only when a repository exposes stable, low-noise context.
 
-## What it generates
+`agent-memory` is designed for that gap. It does not try to replace your docs stack. It adds a small, explicit memory layer for the context that teams repeatedly need but rarely maintain well.
 
-- `docs/agent-memory/README.md`
-- `docs/agent-memory/project-map.md`
-- `docs/agent-memory/current-focus.md`
-- `docs/agent-memory/gotchas.md`
-- `docs/agent-memory/next-steps.md`
+## Core Model
 
-It also adds a small "Project Memory" section to the highest-priority entry file it can find:
+`agent-memory` initializes a `docs/agent-memory/` directory with five files, each with a single job:
 
-1. `AGENTS.md`
-2. `CLAUDE.md`
-3. `README.md`
+- `README.md`
+  Explains how the memory system works and how to maintain it.
+- `project-map.md`
+  Captures stable structure, module boundaries, and key entrypoints.
+- `current-focus.md`
+  Holds the current single-snapshot status, including the latest validation baseline.
+- `gotchas.md`
+  Stores high-cost traps, noisy failures, and subtle boundaries.
+- `next-steps.md`
+  Gives the next contributor a practical starting point.
 
-If none exist, it creates a minimal `AGENTS.md`.
+This is not a generic template dump. It is a role-based memory model: stable map, current state, costly lessons, and immediate action.
 
-## Product defaults
+## Quickstart
 
-- English templates by default
-- Strong static auto-generation
-- Conservative merge behavior
-- Validation commands are optional and **not** run by default
-- Interactive init shows a dry summary before writing files
-
-## Usage
-
-### Standard
+### 1. Initialize project memory
 
 ```bash
 npx agent-memory init
+```
+
+Bootstraps `docs/agent-memory/` and wires a Project Memory entry section into the highest-priority entry file it can find.
+
+### 2. Refresh managed memory
+
+```bash
 npx agent-memory update
+```
+
+Refreshes managed memory files, repairs missing pieces, and keeps legacy unmanaged files safe by writing generated backups instead of overwriting them.
+
+### 3. Audit memory health
+
+```bash
 npx agent-memory validate
 ```
 
-### Non-interactive
+Runs a read-only audit of memory presence, managed ownership, entry integration, and `current-focus` validation freshness.
 
-```bash
-npx agent-memory init --yes
-```
+## How It Works
 
-This accepts the write plan automatically and skips optional validation commands.
+- Static scan first
+  The tool inspects repo structure, manifests, entry files, scripts, and source layout before generating memory.
+- Conservative merge strategy
+  Missing files are created, but unmanaged files are preserved and get `.generated.bak.*` outputs for manual merge.
+- Managed ownership markers
+  Tool-managed files are explicitly marked so `update` can refresh only what it safely owns.
+- Validation baseline tracking
+  `current-focus.md` records machine-readable metadata so `validate` can check whether the latest baseline exists and is still fresh.
 
-```bash
-npx agent-memory update --yes
-```
+## Learn More
 
-## Merge behavior
+- [Overview](./docs/overview.md)
+- [Commands](./docs/commands.md)
+- [File Model](./docs/file-model.md)
+- [Adoption Guide](./docs/adoption.md)
+- [Contributing](./CONTRIBUTING.md)
 
-- Missing memory files are created
-- Managed memory files are refreshed in place
-- Legacy or unmanaged memory files are preserved
-- A generated `.generated.bak.*` file is written when content already exists
-- Existing entry snippets are not duplicated
-- `update` can repair missing memory files and missing entry snippets
+## Command Summary
 
-## Managed files
+| Command | Purpose |
+| --- | --- |
+| `agent-memory init` | Bootstrap project memory and initial entry wiring |
+| `agent-memory update` | Refresh managed memory and repair missing pieces |
+| `agent-memory validate` | Audit memory health and validation baseline freshness |
 
-Generated memory files now include a small marker comment such as:
+## Who It Is For
 
-```md
-<!-- agent-memory:file=project-map version=1 managed=true -->
-```
+`agent-memory` is for repositories where context loss is expensive:
 
-`agent-memory update` only rewrites files that carry a matching managed marker. Older or manually maintained files are preserved and get a generated backup instead.
+- long-lived product codebases
+- multi-package repos
+- teams with frequent handoffs
+- projects using coding agents in day-to-day development
+- maintainers who want a lighter alternative to sprawling internal docs
 
-## Validation behavior
+It is designed for developers and agents equally. Humans get faster onboarding and less re-discovery. Agents get a stable context layer that reduces noisy exploration.
 
-During interactive setup, `agent-memory` can optionally run common validation commands and summarize the outcome in `current-focus.md`.
+## Roadmap
 
-Examples:
+Current direction:
 
-- `pnpm build`
-- `pnpm test`
-- `npm run build`
-- `npm test`
-- `pytest`
-- `cargo test`
-- `go test ./...`
+- strengthen the memory model and command ergonomics
+- improve adoption guidance for existing repositories
+- add a future `doctor` command for deeper advice beyond strict validation
 
-## Validate command
+## License
 
-`agent-memory validate` is a read-only audit command.
-
-It checks:
-- the presence of `docs/agent-memory/`
-- managed markers on all memory files
-- Project Memory entry snippet wiring
-- `current-focus.md` metadata and validation baseline freshness
-
-It does **not** write files and does **not** run project build/test commands.
-
-## Development
-
-```bash
-npm install
-npm run build
-node dist/cli.js init --yes
-node dist/cli.js update --yes
-node dist/cli.js validate
-npm pack
-npx --yes --package=./agent-memory-0.1.0.tgz agent-memory init --yes
-npx --yes --package=./agent-memory-0.1.0.tgz agent-memory update --yes
-npx --yes --package=./agent-memory-0.1.0.tgz agent-memory validate
-```
-
-## Planned commands
-
-These are intentionally not part of v1 yet:
-
-- `agent-memory doctor`
+MIT
