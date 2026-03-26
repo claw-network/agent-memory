@@ -11,17 +11,16 @@ Canonical project memory for developers and coding agents.
 - it generates a canonical memory bundle in `/.agent-memory/state.json`
 - it projects that bundle into `docs/agent-memory/` as readable repository docs
 
-## Installation
+## Why This Exists
 
-```bash
-npm install -D @agent-connect/memory
-```
+Most repositories still lose high-value engineering context:
 
-```bash
-pnpm add -D @agent-connect/memory
-```
+- architecture is scattered across manifests, folders, and partial docs
+- current state lives in chats, PRs, and short-lived notes
+- costly gotchas are rediscovered repeatedly
+- coding agents work best when a repo exposes stable, low-noise context
 
-Once installed, run the local CLI with `npx agent-memory ...`.
+`agent-memory` turns that into a small canonical bundle that can be regenerated, audited, and projected back into repo-native docs.
 
 ## How It Works
 
@@ -36,6 +35,14 @@ Instead, it:
 5. writes an entry block into the preferred top-level entry file
 
 If you need to control which runtime executes the analysis pass, use `--provider=auto|codex|claude`.
+
+## Design Principles
+
+- canonical machine-readable state first
+- readable projections second
+- repository-grounded synthesis instead of static template guessing
+- versioned markers and hash-based validation
+- short, durable docs over sprawling internal wikis
 
 ## Core Model
 
@@ -57,6 +64,18 @@ An entry block is also written into the preferred top-level entry file, using th
 2. `CLAUDE.md`
 3. `README.md`
 4. fallback create `AGENTS.md`
+
+## Installation
+
+```bash
+npm install -D @agent-connect/memory
+```
+
+```bash
+pnpm add -D @agent-connect/memory
+```
+
+Once installed, run the local CLI with `npx agent-memory ...`.
 
 ## Commands
 
@@ -108,25 +127,6 @@ This audits:
 - entry block presence and hash alignment
 - referenced bundle paths
 - validation baseline freshness
-
-## Why This Exists
-
-Most repositories still lose high-value engineering context:
-
-- architecture is scattered across manifests, folders, and partial docs
-- current state lives in chats, PRs, and short-lived notes
-- costly gotchas are rediscovered repeatedly
-- coding agents work best when a repo exposes stable, low-noise context
-
-`agent-memory` turns that into a small canonical bundle that can be regenerated, audited, and projected back into repo-native docs.
-
-## Design Principles
-
-- canonical machine-readable state first
-- readable projections second
-- repository-grounded synthesis instead of static template guessing
-- versioned markers and hash-based validation
-- short, durable docs over sprawling internal wikis
 
 ## Learn More
 
