@@ -1,8 +1,11 @@
 {
-  "name": "agent-memory",
+  "name": "@agent-connect/memory",
   "version": "0.1.0",
   "description": "Bootstrap durable project memory for developers and coding agents.",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "agent-memory": "./dist/cli.js"
   },

@@ -1,6 +1,6 @@
 # agent-memory
 
-[![npm version](https://img.shields.io/npm/v/agent-memory)](https://www.npmjs.com/package/agent-memory)
+[![npm version](https://img.shields.io/npm/v/%40agent-connect%2Fmemory)](https://www.npmjs.com/package/@agent-connect/memory)
 [![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![node >=18](https://img.shields.io/badge/node-%3E%3D18-417e38)](./package.json)
 
@@ -8,9 +8,19 @@ Durable project memory for developers and coding agents.
 
 `agent-memory` gives a repository a lightweight memory layer that survives across handoffs, chats, PRs, and debugging sessions. It helps teams keep stable project structure, current status, expensive gotchas, and next working steps in one place that both humans and agents can reuse.
 
+Install `@agent-connect/memory` as a dev dependency, then run the local CLI with `npx agent-memory ...`.
+
+## Installation
+
 ```bash
-npx agent-memory init
+npm install -D @agent-connect/memory
 ```
+
+```bash
+pnpm add -D @agent-connect/memory
+```
+
+Once installed, `npx` resolves the local `agent-memory` binary from the current project.
 
 ## Why This Exists
 
@@ -81,6 +91,8 @@ Runs a read-only audit of memory presence, managed ownership, entry integration,
 
 ## How It Works
 
+- Scoped package, stable command
+  The npm package name is `@agent-connect/memory`, while the installed CLI command stays `agent-memory`.
 - Static scan first
   The tool inspects repo structure, manifests, entry files, scripts, and source layout before generating memory.
 - Conservative merge strategy

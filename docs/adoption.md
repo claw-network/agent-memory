@@ -7,6 +7,7 @@ This guide is for teams introducing `agent-memory` into an existing repository.
 Use `init` first:
 
 ```bash
+npm install -D @agent-connect/memory
 npx agent-memory init
 ```
 
@@ -68,3 +69,13 @@ The goal is not to automate all documentation. The goal is to make the most impo
 If a repository is tiny or short-lived, keep the memory layer small.
 
 The model works best when it stays focused. More files are not the goal. Better continuity is.
+
+## Package Name vs Command Name
+
+The published npm package is `@agent-connect/memory`.
+
+The installed command stays `agent-memory`, so the normal workflow after installation is:
+
+```bash
+npx agent-memory init
+```

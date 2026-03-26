@@ -8,11 +8,27 @@
 
 They are intentionally separate because they do different jobs.
 
+Install the package first:
+
+```bash
+npm install -D @agent-connect/memory
+```
+
+or:
+
+```bash
+pnpm add -D @agent-connect/memory
+```
+
+Once installed, run the local CLI with `npx agent-memory ...`.
+
 ## `agent-memory init`
 
 ```bash
 npx agent-memory init
 ```
+
+This command assumes `@agent-connect/memory` is already installed in the current project.
 
 Use `init` when a repository does not yet have project memory.
 
@@ -42,6 +58,8 @@ Use it when:
 ```bash
 npx agent-memory update
 ```
+
+This command assumes `@agent-connect/memory` is already installed in the current project.
 
 Use `update` when project memory already exists and needs to be refreshed.
 
@@ -74,6 +92,8 @@ Use it when:
 npx agent-memory validate
 ```
 
+This command assumes `@agent-connect/memory` is already installed in the current project.
+
 Use `validate` when you want a read-only audit of memory health.
 
 What it checks:
@@ -97,6 +117,7 @@ Use it when:
 
 ## Mental Model
 
+- install `@agent-connect/memory`
 - `init` = connect
 - `update` = refresh
 - `validate` = audit

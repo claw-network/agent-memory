@@ -25,6 +25,17 @@ Package-level smoke test:
 npm pack
 ```
 
+## Published Package Usage
+
+The public npm package is `@agent-connect/memory`, while the CLI command remains `agent-memory`.
+
+Typical consumer workflow:
+
+```bash
+npm install -D @agent-connect/memory
+npx agent-memory init
+```
+
 ## Project Expectations
 
 - Keep the tool small and explicit.
