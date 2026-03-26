@@ -1,13 +1,10 @@
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { detectEntryFile, getFallbackEntryFile, listExistingEntryFiles } from "./detect-entry-files";
-import { parseCurrentFocusMetadata, stripCurrentFocusMetadata } from "./current-focus-metadata";
-import { detectManagedFile, stripManagedMarker } from "./file-ownership";
-import { buildMemoryTargets } from "./plan-memory-write";
-import type { AuditFinding, MemoryFiles, ProjectScan } from "../types";
-
-const VALIDATION_MAX_AGE_DAYS = 14;
-const ENTRY_MARKER = "<!-- agent-memory:start -->";
+import { PROJECTION_VERSION, ENTRY_VERSION, VALIDATION_MAX_AGE_DAYS } from "./constants";
+import { parseEntryMarker, parseProjectionMarker, projectState } from "./bundle-projector";
+import { validateStateShape } from "./bundle-schema";
+import { computeBundleHash, getStatePath } from "./state-store";
+import type { AuditFinding, AgentMemoryState } from "../types";
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -32,169 +29,207 @@ function isValidationFresh(validatedAt: string): boolean {
   return Date.now() - validatedMs <= maxAgeMs;
 }
 
-export async function validateMemory(
-  scan: ProjectScan,
-  memory: MemoryFiles,
-): Promise<AuditFinding[]> {
-  const findings: AuditFinding[] = [];
-  const memoryDir = join(scan.rootDir, "docs/agent-memory");
-  const targets = buildMemoryTargets(scan.rootDir, memory);
+function collectReferencedPaths(state: AgentMemoryState): string[] {
+  return Array.from(
+    new Set([
+      state.bundle.project.recommendedEntryFile,
+      ...state.bundle.project.keyPaths,
+      ...state.bundle.projectMap.modules.map((module) => module.path),
+      ...state.bundle.projectMap.entrypoints.map((entrypoint) => entrypoint.path),
+      ...state.bundle.projectMap.denseSourceAreas.map((area) => area.path),
+      ...state.bundle.projectMap.firstFilesToRead,
+    ]),
+  );
+}
 
-  if (await exists(memoryDir)) {
-    findings.push({
-      status: "pass",
-      code: "memory-directory",
-      message: "docs/agent-memory exists.",
-    });
-  } else {
+export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
+  const findings: AuditFinding[] = [];
+  const statePath = getStatePath(rootDir);
+
+  if (!(await exists(statePath))) {
     findings.push({
       status: "fail",
-      code: "memory-directory",
-      message: "docs/agent-memory is missing.",
+      code: "state:missing",
+      message: ".agent-memory/state.json is missing. Run `agent-memory init` first.",
     });
+    return findings;
   }
 
-  for (const target of targets) {
-    const ownership = await detectManagedFile(target.path, target.fileId);
-    switch (ownership.state) {
-      case "missing":
-        findings.push({
-          status: "fail",
-          code: `memory-file:${target.fileId}`,
-          message: `${target.fileId} is missing.`,
-        });
-        break;
-      case "managed":
-        findings.push({
-          status: "pass",
-          code: `memory-file:${target.fileId}`,
-          message: `${target.fileId} is present and managed.`,
-        });
-        break;
-      case "unmanaged":
-        findings.push({
-          status: "fail",
-          code: `memory-file:${target.fileId}`,
-          message: `${target.fileId} is present but missing a valid managed marker.`,
-        });
-        break;
-    }
-  }
+  findings.push({
+    status: "pass",
+    code: "state:file",
+    message: ".agent-memory/state.json exists.",
+  });
 
-  const entryFiles = await listExistingEntryFiles(scan.rootDir);
-  const entryFileWithSnippet = await (async (): Promise<string | null> => {
-    for (const entryFile of entryFiles) {
-      const entryContent = await readFile(entryFile, "utf8");
-      if (entryContent.includes(ENTRY_MARKER)) {
-        return entryFile;
-      }
-    }
-
-    return null;
-  })();
-
-  if (entryFileWithSnippet) {
+  let rawState = "";
+  try {
+    rawState = await readFile(statePath, "utf8");
+  } catch (error) {
     findings.push({
-      status: "pass",
-      code: "entry-file",
-      message: `Entry integration exists in ${entryFileWithSnippet}.`,
+      status: "fail",
+      code: "state:read",
+      message: `Unable to read .agent-memory/state.json: ${error instanceof Error ? error.message : String(error)}`,
     });
-  } else {
-    const entryFile = (await detectEntryFile(scan.rootDir)) ?? getFallbackEntryFile(scan.rootDir);
-
-    if (!(await exists(entryFile))) {
-      findings.push({
-        status: "fail",
-        code: "entry-file",
-        message: "No supported entry file with Project Memory snippet was found.",
-      });
-    } else {
-      findings.push({
-        status: "fail",
-        code: "entry-file",
-        message: `Entry file ${entryFile} is missing the Project Memory snippet.`,
-      });
-    }
+    return findings;
   }
 
-  const currentFocusTarget = targets.find((target) => target.fileId === "current-focus");
-  if (currentFocusTarget && (await exists(currentFocusTarget.path))) {
-    const currentFocusContent = await readFile(currentFocusTarget.path, "utf8");
-    const currentFocusBody = stripCurrentFocusMetadata(stripManagedMarker(currentFocusContent));
-    const metadata = parseCurrentFocusMetadata(stripManagedMarker(currentFocusContent));
-
-    if (!currentFocusBody.includes("## Validation Snapshot")) {
-      findings.push({
-        status: "fail",
-        code: "current-focus:validation-section",
-        message: "current-focus.md is missing the Validation Snapshot section.",
-      });
-    } else {
-      findings.push({
-        status: "pass",
-        code: "current-focus:validation-section",
-        message: "current-focus.md includes the Validation Snapshot section.",
-      });
-    }
-
-    if (!metadata) {
-      findings.push({
-        status: "fail",
-        code: "current-focus:metadata",
-        message: "current-focus.md is missing readable metadata.",
-      });
-    } else if (!isValidIsoTimestamp(metadata.generatedAt)) {
-      findings.push({
-        status: "fail",
-        code: "current-focus:generated-at",
-        message: "current-focus.md has an invalid generatedAt timestamp.",
-      });
-    } else {
-      findings.push({
-        status: "pass",
-        code: "current-focus:generated-at",
-        message: "current-focus.md has readable generation metadata.",
-      });
-
-      if (metadata.validatedAt === "none" || /Status: Not run during/i.test(currentFocusBody)) {
-        findings.push({
-          status: "fail",
-          code: "current-focus:validated-at",
-          message: "current-focus.md does not record a completed validation baseline.",
-        });
-      } else if (!isValidIsoTimestamp(metadata.validatedAt)) {
-        findings.push({
-          status: "fail",
-          code: "current-focus:validated-at",
-          message: "current-focus.md has an invalid validatedAt timestamp.",
-        });
-      } else if (!isValidationFresh(metadata.validatedAt)) {
-        findings.push({
-          status: "fail",
-          code: "current-focus:freshness",
-          message: `current-focus.md validation baseline is older than ${VALIDATION_MAX_AGE_DAYS} days.`,
-        });
-      } else {
-        findings.push({
-          status: "pass",
-          code: "current-focus:freshness",
-          message: "current-focus.md validation baseline is fresh.",
-        });
-      }
-    }
-  }
-
-  if (!scan.projectSignals.some((signal) => signal === ".git" || signal === "package.json")) {
+  let parsedState: unknown;
+  try {
+    parsedState = JSON.parse(rawState) as unknown;
+  } catch (error) {
     findings.push({
-      status: "warn",
-      code: "project-signals",
-      message: "Project signals are weak; review the generated memory manually.",
+      status: "fail",
+      code: "state:json",
+      message: `state.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    return findings;
+  }
+
+  const stateErrors = validateStateShape(parsedState);
+  if (stateErrors.length > 0) {
+    findings.push({
+      status: "fail",
+      code: "state:schema",
+      message: `state.json failed schema validation: ${stateErrors.join(" ")}`,
+    });
+    return findings;
+  }
+
+  const state = parsedState as AgentMemoryState;
+  findings.push({
+    status: "pass",
+    code: "state:schema",
+    message: "state.json passed schema validation.",
+  });
+
+  const computedHash = computeBundleHash(state.bundle);
+  if (computedHash !== state.bundleHash) {
+    findings.push({
+      status: "fail",
+      code: "state:bundle-hash",
+      message: "state.json bundleHash does not match the stored bundle content.",
     });
   } else {
     findings.push({
       status: "pass",
-      code: "project-signals",
-      message: "Project signals are strong enough for reliable memory generation.",
+      code: "state:bundle-hash",
+      message: "state.json bundleHash matches the bundle content.",
+    });
+  }
+
+  const projection = projectState(rootDir, state);
+  for (const file of projection.files) {
+    if (!(await exists(file.path))) {
+      findings.push({
+        status: "fail",
+        code: `projection:${file.fileId}`,
+        message: `${file.path} is missing.`,
+      });
+      continue;
+    }
+
+    const content = await readFile(file.path, "utf8");
+    const marker = parseProjectionMarker(content);
+    if (!marker) {
+      findings.push({
+        status: "fail",
+        code: `projection:${file.fileId}:marker`,
+        message: `${file.path} is missing a valid projection marker.`,
+      });
+      continue;
+    }
+
+    if (marker.fileId !== file.fileId || marker.version !== PROJECTION_VERSION || marker.bundleHash !== state.bundleHash) {
+      findings.push({
+        status: "fail",
+        code: `projection:${file.fileId}:drift`,
+        message: `${file.path} projection marker does not match the canonical state.`,
+      });
+      continue;
+    }
+
+    findings.push({
+      status: "pass",
+      code: `projection:${file.fileId}`,
+      message: `${file.path} matches the canonical projection marker.`,
+    });
+  }
+
+  if (!(await exists(projection.entryFile))) {
+    findings.push({
+      status: "fail",
+      code: "entry:file",
+      message: `Entry file ${projection.entryFile} is missing.`,
+    });
+  } else {
+    const entryContent = await readFile(projection.entryFile, "utf8");
+    const marker = parseEntryMarker(entryContent);
+    if (!marker) {
+      findings.push({
+        status: "fail",
+        code: "entry:marker",
+        message: `Entry file ${projection.entryFile} is missing the project memory block.`,
+      });
+    } else if (marker.version !== ENTRY_VERSION || marker.bundleHash !== state.bundleHash) {
+      findings.push({
+        status: "fail",
+        code: "entry:drift",
+        message: `Entry file ${projection.entryFile} does not match the canonical memory bundle.`,
+      });
+    } else {
+      findings.push({
+        status: "pass",
+        code: "entry:file",
+        message: `Entry file ${projection.entryFile} contains the current project memory block.`,
+      });
+    }
+  }
+
+  const missingPaths: string[] = [];
+  for (const relativePath of collectReferencedPaths(state)) {
+    if (!(await exists(join(rootDir, relativePath)))) {
+      missingPaths.push(relativePath);
+    }
+  }
+
+  if (missingPaths.length > 0) {
+    findings.push({
+      status: "fail",
+      code: "bundle:paths",
+      message: `The canonical bundle references missing paths: ${missingPaths.join(", ")}`,
+    });
+  } else {
+    findings.push({
+      status: "pass",
+      code: "bundle:paths",
+      message: "All referenced bundle paths currently exist.",
+    });
+  }
+
+  const snapshot = state.bundle.currentFocus.validationSnapshot;
+  if (snapshot.status === "not-run" || snapshot.validatedAt === null) {
+    findings.push({
+      status: "fail",
+      code: "validation:baseline",
+      message: "No validation baseline is recorded in the canonical state.",
+    });
+  } else if (!isValidIsoTimestamp(snapshot.validatedAt)) {
+    findings.push({
+      status: "fail",
+      code: "validation:timestamp",
+      message: "The recorded validation timestamp is not a valid ISO date.",
+    });
+  } else if (!isValidationFresh(snapshot.validatedAt)) {
+    findings.push({
+      status: "fail",
+      code: "validation:freshness",
+      message: `The validation baseline is older than ${VALIDATION_MAX_AGE_DAYS} days.`,
+    });
+  } else {
+    findings.push({
+      status: "pass",
+      code: "validation:freshness",
+      message: "The validation baseline is present and still fresh.",
     });
   }
 

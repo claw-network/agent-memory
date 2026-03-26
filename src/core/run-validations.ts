@@ -36,8 +36,10 @@ async function runCommand(cwd: string, command: ValidationCommand): Promise<Vali
       resolve({
         label: command.label,
         command: command.command.join(" "),
+        purpose: command.purpose,
         status: "unavailable",
         summary: `Unable to start command: ${error.message}`,
+        exitCode: null,
       });
     });
 
@@ -45,17 +47,16 @@ async function runCommand(cwd: string, command: ValidationCommand): Promise<Vali
       resolve({
         label: command.label,
         command: command.command.join(" "),
+        purpose: command.purpose,
         status: code === 0 ? "passed" : "failed",
         summary: summarizeOutput(stdout || stderr),
+        exitCode: code,
       });
     });
   });
 }
 
-export async function runValidations(
-  cwd: string,
-  commands: ValidationCommand[],
-): Promise<ValidationResult[]> {
+export async function runValidations(cwd: string, commands: ValidationCommand[]): Promise<ValidationResult[]> {
   const results: ValidationResult[] = [];
 
   for (const command of commands.slice(0, 2)) {

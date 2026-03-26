@@ -606,6 +606,7 @@ function inferValidationCandidates(
       commands.push({
         label: usesPnpm ? "pnpm build" : "build",
         command: usesPnpm ? ["pnpm", "build"] : usesNpm ? ["npm", "run", "build"] : ["npm", "run", "build"],
+        purpose: "Check whether the repository still builds successfully.",
       });
     }
 
@@ -613,6 +614,7 @@ function inferValidationCandidates(
       commands.push({
         label: usesPnpm ? "pnpm test" : "test",
         command: usesPnpm ? ["pnpm", "test"] : usesNpm ? ["npm", "test"] : ["npm", "test"],
+        purpose: "Run the most common automated test suite for the repository.",
       });
     }
 
@@ -620,17 +622,29 @@ function inferValidationCandidates(
   }
 
   if (primaryEcosystem === "python") {
-    commands.push({ label: "pytest", command: ["pytest"] });
+    commands.push({
+      label: "pytest",
+      command: ["pytest"],
+      purpose: "Run the primary Python test suite.",
+    });
     return commands;
   }
 
   if (primaryEcosystem === "rust") {
-    commands.push({ label: "cargo test", command: ["cargo", "test"] });
+    commands.push({
+      label: "cargo test",
+      command: ["cargo", "test"],
+      purpose: "Run the primary Rust test suite.",
+    });
     return commands;
   }
 
   if (primaryEcosystem === "go") {
-    commands.push({ label: "go test ./...", command: ["go", "test", "./..."] });
+    commands.push({
+      label: "go test ./...",
+      command: ["go", "test", "./..."],
+      purpose: "Run the primary Go package test suite.",
+    });
     return commands;
   }
 

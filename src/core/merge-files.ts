@@ -1,9 +1,8 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join } from "node:path";
-import type { ManagedFileOwnership, PlannedChange } from "../types";
+import { dirname } from "node:path";
+import type { PlannedChange, ProjectedMemory, ProjectionFile } from "../types";
 
-const ENTRY_START = "<!-- agent-memory:start -->";
-const ENTRY_END = "<!-- agent-memory:end -->";
+const ENTRY_BLOCK_REGEX = /<!-- agent-memory:entry[\s\S]*?<!-- agent-memory:entry end -->\n?/;
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -18,21 +17,7 @@ async function ensureParent(path: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
 }
 
-function makeBackupPath(path: string): string {
-  const ext = extname(path);
-  const base = basename(path, ext);
-  return join(dirname(path), `${base}.generated.bak${ext}`);
-}
-
-export function getGeneratedBackupPath(path: string): string {
-  return makeBackupPath(path);
-}
-
 function insertEntrySnippet(existing: string, snippet: string): string {
-  if (existing.includes(ENTRY_START)) {
-    return existing;
-  }
-
   const headingMatch = existing.match(/^# .+$/m);
   if (!headingMatch || headingMatch.index === undefined) {
     return `${snippet}\n\n${existing}`.trimEnd() + "\n";
@@ -42,86 +27,63 @@ function insertEntrySnippet(existing: string, snippet: string): string {
   return `${existing.slice(0, headingEnd)}\n\n${snippet}\n${existing.slice(headingEnd).replace(/^\n*/, "\n")}`;
 }
 
-export function wrapEntrySnippet(content: string): string {
-  return `${ENTRY_START}\n${content}\n${ENTRY_END}`;
+function nextFileWriteKind(existsAlready: boolean): PlannedChange["kind"] {
+  return existsAlready ? "overwrite" : "create";
 }
 
-export async function planFileWrite(path: string, content: string): Promise<PlannedChange[]> {
-  if (!(await exists(path))) {
-    return [{ kind: "create", path, note: "Create missing file" }];
+export async function planProjectionWrites(
+  projection: ProjectedMemory,
+  statePath: string,
+): Promise<PlannedChange[]> {
+  const changes: PlannedChange[] = [];
+
+  changes.push({
+    kind: nextFileWriteKind(await exists(statePath)),
+    path: statePath,
+    note: "Write canonical memory state",
+  });
+
+  for (const file of projection.files) {
+    changes.push({
+      kind: nextFileWriteKind(await exists(file.path)),
+      path: file.path,
+      note: `Write ${file.fileId} projection`,
+    });
   }
 
-  const existing = await readFile(path, "utf8");
-  if (existing === content) {
-    return [{ kind: "skip", path, note: "File already matches generated content" }];
-  }
+  const entryExists = await exists(projection.entryFile);
+  const entryContent = entryExists ? await readFile(projection.entryFile, "utf8") : "";
+  const hasEntryBlock = entryExists ? ENTRY_BLOCK_REGEX.test(entryContent) : false;
+  changes.push({
+    kind: entryExists && hasEntryBlock ? "overwrite" : entryExists ? "patch" : "create",
+    path: projection.entryFile,
+    note: entryExists
+      ? hasEntryBlock
+        ? "Replace existing project memory entry block"
+        : "Insert project memory entry block"
+      : "Create entry file with project memory block",
+  });
 
-  return [
-    { kind: "skip", path, note: "Preserve existing file content" },
-    { kind: "backup", path: makeBackupPath(path), note: "Write generated backup for manual merge" },
-  ];
+  return changes;
 }
 
-export async function applyFileWrite(path: string, content: string): Promise<void> {
+export async function writeProjectionFile(file: ProjectionFile): Promise<void> {
+  await ensureParent(file.path);
+  await writeFile(file.path, file.content, "utf8");
+}
+
+export async function applyEntrySnippet(path: string, snippet: string): Promise<void> {
   await ensureParent(path);
 
   if (!(await exists(path))) {
-    await writeFile(path, content, "utf8");
+    await writeFile(path, `${snippet}\n`, "utf8");
     return;
   }
 
   const existing = await readFile(path, "utf8");
-  if (existing === content) {
-    return;
-  }
+  const nextContent = ENTRY_BLOCK_REGEX.test(existing)
+    ? existing.replace(ENTRY_BLOCK_REGEX, `${snippet}\n`)
+    : insertEntrySnippet(existing, snippet);
 
-  await writeFile(makeBackupPath(path), content, "utf8");
-}
-
-export async function applyManagedFileWrite(
-  path: string,
-  content: string,
-  ownership: ManagedFileOwnership,
-): Promise<void> {
-  await ensureParent(path);
-
-  if (ownership.existingContent === content) {
-    return;
-  }
-
-  if (ownership.state === "missing" || ownership.state === "managed") {
-    await writeFile(path, content, "utf8");
-    return;
-  }
-
-  await writeFile(makeBackupPath(path), content, "utf8");
-}
-
-export async function planEntryPatch(path: string, wrappedSnippet: string): Promise<PlannedChange[]> {
-  if (!(await exists(path))) {
-    return [{ kind: "create", path, note: "Create entry file with project memory section" }];
-  }
-
-  const existing = await readFile(path, "utf8");
-  if (existing.includes(ENTRY_START)) {
-    return [{ kind: "skip", path, note: "Entry snippet already exists" }];
-  }
-
-  return [{ kind: "patch", path, note: "Insert project memory section" }];
-}
-
-export async function applyEntryPatch(path: string, wrappedSnippet: string): Promise<void> {
-  await ensureParent(path);
-
-  if (!(await exists(path))) {
-    await writeFile(path, `${wrappedSnippet}\n`, "utf8");
-    return;
-  }
-
-  const existing = await readFile(path, "utf8");
-  if (existing.includes(ENTRY_START)) {
-    return;
-  }
-
-  await writeFile(path, insertEntrySnippet(existing, wrappedSnippet), "utf8");
+  await writeFile(path, nextContent, "utf8");
 }

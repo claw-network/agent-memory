@@ -1,30 +1,27 @@
-import { writeFile } from "node:fs/promises";
-import { detectEntryFile, getFallbackEntryFile } from "../core/detect-entry-files";
+import { orchestrateAgentMemory } from "../core/agent-orchestrator";
+import { collectContext } from "../core/context-collector";
 import { confirm, formatPlan, printProjectSummary } from "../core/command-helpers";
-import { generateMemory } from "../core/generate-memory";
-import {
-  applyEntryPatch,
-  applyManagedFileWrite,
-  planEntryPatch,
-  wrapEntrySnippet,
-} from "../core/merge-files";
-import { buildMemoryTargets, planManagedMemoryWrites } from "../core/plan-memory-write";
-import { runValidations } from "../core/run-validations";
-import { scanProject } from "../core/scan-project";
-import type { InitOptions } from "../types";
+import { projectState } from "../core/bundle-projector";
+import { applyEntrySnippet, planProjectionWrites, writeProjectionFile } from "../core/merge-files";
+import { buildState, getStatePath, writeState } from "../core/state-store";
+import type { CommandOptions } from "../types";
 
-export async function runInit(options: InitOptions): Promise<number> {
-  const scan = await scanProject(options.cwd);
-  const memory = generateMemory(scan, "init");
-  const entryFile = (await detectEntryFile(options.cwd)) ?? getFallbackEntryFile(options.cwd);
-  const wrappedSnippet = wrapEntrySnippet(memory.entrySnippet);
-  const fileTargets = buildMemoryTargets(options.cwd, memory);
-  const { ownerships, changes } = await planManagedMemoryWrites(fileTargets);
-  const plannedChanges = [...changes, ...(await planEntryPatch(entryFile, wrappedSnippet))];
-  const currentFocusTarget = fileTargets.find((target) => target.fileId === "current-focus");
-  const currentFocusOwnership = currentFocusTarget ? ownerships.get(currentFocusTarget.path) ?? null : null;
+export async function runInit(options: CommandOptions): Promise<number> {
+  const context = await collectContext(options.cwd, "init");
 
-  printProjectSummary(scan);
+  printProjectSummary(context.scan);
+  console.log(`Provider preference: ${options.provider}`);
+  if (context.previousState) {
+    console.log("Note: an existing canonical state was found and will be replaced.");
+  }
+  console.log("");
+  console.log("Running background agent...");
+
+  const result = await orchestrateAgentMemory(context, options.provider, options.validate);
+  const state = buildState(result.bundle, result.provider);
+  const projection = projectState(options.cwd, state);
+  const plannedChanges = await planProjectionWrites(projection, getStatePath(options.cwd));
+
   console.log("");
   console.log("Planned changes:");
   console.log(formatPlan(plannedChanges));
@@ -35,54 +32,29 @@ export async function runInit(options: InitOptions): Promise<number> {
     return 0;
   }
 
-  for (const target of fileTargets) {
-    const ownership = ownerships.get(target.path);
-    if (!ownership) {
-      continue;
-    }
-    await applyManagedFileWrite(target.path, target.content, ownership);
+  await writeState(options.cwd, state);
+  for (const file of projection.files) {
+    await writeProjectionFile(file);
   }
-  await applyEntryPatch(entryFile, wrappedSnippet);
+  await applyEntrySnippet(projection.entryFile, projection.entrySnippet);
 
   console.log("");
   console.log("Project memory initialized.");
+  console.log(`Canonical state: ${getStatePath(options.cwd)}`);
 
-  if (!options.validate && options.yes) {
-    console.log("Validation commands were skipped because --yes uses the default non-validation path.");
-    return 0;
+  if (result.discoveryErrors.length > 0) {
+    console.log(`Discovery pass needed repair for ${result.discoveryErrors.length} issue(s) before finalizing.`);
   }
 
-  if (scan.validationCandidates.length === 0) {
-    console.log("No common validation command was inferred, so init is complete.");
-    return 0;
-  }
-
-  const shouldValidate = options.validate
-    ? true
-    : await confirm("Run common validation commands and refresh current-focus.md?", false);
-  if (!shouldValidate) {
-    console.log("Validation commands were not run.");
-    return 0;
-  }
-
-  console.log("");
-  console.log("Running validation commands...");
-  const results = await runValidations(options.cwd, scan.validationCandidates);
-  for (const result of results) {
-    console.log(`- ${result.command}: ${result.status}`);
-  }
-
-  const refreshedMemory = generateMemory(scan, "init", results);
-  if (!currentFocusTarget || !currentFocusOwnership) {
-    return 0;
-  }
-
-  if (currentFocusOwnership.state === "missing" || currentFocusOwnership.state === "managed") {
-    await writeFile(currentFocusTarget.path, refreshedMemory.currentFocus, "utf8");
-    console.log("Updated docs/agent-memory/current-focus.md with validation summary.");
-  } else {
-    await applyManagedFileWrite(currentFocusTarget.path, refreshedMemory.currentFocus, currentFocusOwnership);
-    console.log("Wrote a generated current-focus backup with validation summary for manual merge.");
+  if (options.validate) {
+    if (result.validationResults.length === 0) {
+      console.log("No agent-recommended validation commands were executed.");
+    } else {
+      console.log("Validation commands:");
+      for (const validation of result.validationResults) {
+        console.log(`- ${validation.command}: ${validation.status}`);
+      }
+    }
   }
 
   return 0;

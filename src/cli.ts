@@ -4,31 +4,42 @@ import { cwd, exit } from "node:process";
 import { runInit } from "./commands/init";
 import { runUpdate } from "./commands/update";
 import { runValidate } from "./commands/validate";
+import type { ProviderPreference } from "./types";
 
 interface ParsedArgs {
   command: string | null;
   yes: boolean;
   validate: boolean;
+  provider: ProviderPreference;
 }
 
 function printHelp(): void {
   console.log("agent-memory");
   console.log("");
   console.log("Usage:");
-  console.log("  agent-memory init [--yes] [--validate]");
-  console.log("  agent-memory update [--yes] [--validate]");
+  console.log("  agent-memory init [--yes] [--validate] [--provider=auto|codex|claude]");
+  console.log("  agent-memory update [--yes] [--validate] [--provider=auto|codex|claude]");
   console.log("  agent-memory validate");
   console.log("");
   console.log("Commands:");
-  console.log("  init    Generate docs/agent-memory and wire in a Project Memory entry snippet.");
-  console.log("  update  Refresh managed project memory and repair missing memory pieces.");
-  console.log("  validate  Audit project memory health and current-focus validation freshness.");
+  console.log("  init      Run a real background agent, rebuild canonical memory state, and rewrite projections.");
+  console.log("  update    Refresh canonical memory state and rewrite projections from the existing state model.");
+  console.log("  validate  Audit canonical state, projection freshness, entry wiring, and validation baseline freshness.");
+}
+
+function parseProvider(value: string): ProviderPreference {
+  if (value === "auto" || value === "codex" || value === "claude") {
+    return value;
+  }
+
+  throw new Error(`Unknown provider: ${value}`);
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
   const args = [...argv];
   let yes = false;
   let validate = false;
+  let provider: ProviderPreference = "auto";
   let command: string | null = null;
 
   while (args.length > 0) {
@@ -47,6 +58,20 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
+    if (value.startsWith("--provider=")) {
+      provider = parseProvider(value.slice("--provider=".length));
+      continue;
+    }
+
+    if (value === "--provider") {
+      const nextValue = args.shift();
+      if (!nextValue) {
+        throw new Error("Missing value for --provider");
+      }
+      provider = parseProvider(nextValue);
+      continue;
+    }
+
     if (value === "--help" || value === "-h") {
       printHelp();
       exit(0);
@@ -60,7 +85,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     throw new Error(`Unknown argument: ${value}`);
   }
 
-  return { command, yes, validate };
+  return { command, yes, validate, provider };
 }
 
 async function main(): Promise<void> {
@@ -73,14 +98,24 @@ async function main(): Promise<void> {
 
   switch (parsed.command) {
     case "init": {
-      const code = await runInit({ cwd: cwd(), yes: parsed.yes, validate: parsed.validate });
+      const code = await runInit({
+        cwd: cwd(),
+        yes: parsed.yes,
+        validate: parsed.validate,
+        provider: parsed.provider,
+      });
       if (code !== 0) {
         exit(code);
       }
       return;
     }
     case "update": {
-      const code = await runUpdate({ cwd: cwd(), yes: parsed.yes, validate: parsed.validate });
+      const code = await runUpdate({
+        cwd: cwd(),
+        yes: parsed.yes,
+        validate: parsed.validate,
+        provider: parsed.provider,
+      });
       if (code !== 0) {
         exit(code);
       }

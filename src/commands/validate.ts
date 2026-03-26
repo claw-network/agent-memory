@@ -1,11 +1,7 @@
-import { generateMemory } from "../core/generate-memory";
-import { scanProject } from "../core/scan-project";
 import { validateMemory } from "../core/validate-memory";
 
 export async function runValidate(cwd: string): Promise<number> {
-  const scan = await scanProject(cwd);
-  const memory = generateMemory(scan, "update");
-  const findings = await validateMemory(scan, memory);
+  const findings = await validateMemory(cwd);
 
   let passCount = 0;
   let warnCount = 0;
