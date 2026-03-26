@@ -1,6 +1,6 @@
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { detectEntryFile, getFallbackEntryFile } from "./detect-entry-files";
+import { detectEntryFile, getFallbackEntryFile, listExistingEntryFiles } from "./detect-entry-files";
 import { parseCurrentFocusMetadata, stripCurrentFocusMetadata } from "./current-focus-metadata";
 import { detectManagedFile, stripManagedMarker } from "./file-ownership";
 import { buildMemoryTargets } from "./plan-memory-write";
@@ -81,20 +81,32 @@ export async function validateMemory(
     }
   }
 
-  const entryFile = (await detectEntryFile(scan.rootDir)) ?? getFallbackEntryFile(scan.rootDir);
-  if (!(await exists(entryFile))) {
+  const entryFiles = await listExistingEntryFiles(scan.rootDir);
+  const entryFileWithSnippet = await (async (): Promise<string | null> => {
+    for (const entryFile of entryFiles) {
+      const entryContent = await readFile(entryFile, "utf8");
+      if (entryContent.includes(ENTRY_MARKER)) {
+        return entryFile;
+      }
+    }
+
+    return null;
+  })();
+
+  if (entryFileWithSnippet) {
     findings.push({
-      status: "fail",
+      status: "pass",
       code: "entry-file",
-      message: "No supported entry file with Project Memory snippet was found.",
+      message: `Entry integration exists in ${entryFileWithSnippet}.`,
     });
   } else {
-    const entryContent = await readFile(entryFile, "utf8");
-    if (entryContent.includes(ENTRY_MARKER)) {
+    const entryFile = (await detectEntryFile(scan.rootDir)) ?? getFallbackEntryFile(scan.rootDir);
+
+    if (!(await exists(entryFile))) {
       findings.push({
-        status: "pass",
+        status: "fail",
         code: "entry-file",
-        message: `Entry integration exists in ${entryFile}.`,
+        message: "No supported entry file with Project Memory snippet was found.",
       });
     } else {
       findings.push({

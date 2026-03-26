@@ -23,6 +23,17 @@ export async function detectEntryFile(rootDir: string): Promise<string | null> {
   return null;
 }
 
+export async function listExistingEntryFiles(rootDir: string): Promise<string[]> {
+  const candidates = await Promise.all(
+    ENTRY_PRIORITY.map(async (name) => {
+      const candidate = join(rootDir, name);
+      return (await exists(candidate)) ? candidate : null;
+    }),
+  );
+
+  return candidates.filter((candidate): candidate is string => candidate !== null);
+}
+
 export function getFallbackEntryFile(rootDir: string): string {
   return join(rootDir, "AGENTS.md");
 }
