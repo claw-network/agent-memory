@@ -1,13 +1,13 @@
 {
   "name": "@agent-connect/memory",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Bootstrap durable project memory for developers and coding agents.",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
   },
   "bin": {
-    "agent-memory": "./dist/cli.js"
+    "agent-memory": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -15,7 +15,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && chmod +x dist/cli.js",
     "clean": "rm -rf dist",
     "prepack": "npm run build"
   },
