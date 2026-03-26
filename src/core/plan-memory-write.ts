@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { detectManagedFile } from "./file-ownership";
+import { getGeneratedBackupPath } from "./merge-files";
 import type { ManagedFileOwnership, MemoryFiles, MemoryTarget, PlannedChange } from "../types";
 
 export function buildMemoryTargets(rootDir: string, memory: MemoryFiles): MemoryTarget[] {
@@ -24,7 +25,11 @@ function planFromOwnership(ownership: ManagedFileOwnership, content: string): Pl
     case "unmanaged":
       return [
         { kind: "skip", path: ownership.path, note: "Preserve legacy or unmanaged file content" },
-        { kind: "backup", path: ownership.path, note: "Write generated backup for manual merge (legacy/unmanaged file)" },
+        {
+          kind: "backup",
+          path: getGeneratedBackupPath(ownership.path),
+          note: "Write generated backup for manual merge (legacy/unmanaged file)",
+        },
       ];
   }
 }
