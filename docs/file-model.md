@@ -1,107 +1,150 @@
 # File Model
 
-`agent-memory` uses a fixed five-file model so each piece of context has a clear home.
+`agent-memory` now uses a canonical-state-plus-projection model.
 
-Inside those files, repeated high-value records are written as small memory units with stable field labels. The files define the category. The units define the smallest reusable record.
+The important change is simple:
 
-## `README.md`
+- `/.agent-memory/state.json` is the only source of truth
+- `docs/agent-memory/*.md` are generated projections
 
-This file explains how the memory system works inside the target repository.
+## Canonical State
 
-It should answer:
+The canonical file is:
 
-- what belongs in the memory folder
-- how often it should be refreshed
-- what should stay out of it
-
-## `project-map.md`
-
-This is the stable structural map.
-
-It should capture:
-
-- top-level modules or packages
-- key entrypoints
-- main architectural boundaries
-- the first files a newcomer should read
-
-It should not become a changelog.
-
-## `current-focus.md`
-
-This is the current single-snapshot operational state.
-
-It should capture:
-
-- the latest known repository state
-- the latest verification summary
-- current blockers or follow-ups
-
-It is intentionally not historical. When the state changes, this file should be refreshed, not appended forever.
-
-Recommended unit shape for follow-ups:
-
-- `Why:` why this follow-up matters now
-- `Start:` the cleanest next move
-- `Done when:` the condition that closes the follow-up
-
-## `gotchas.md`
-
-This file is for traps that are expensive to rediscover.
-
-Good entries are:
-
-- noisy build failures with non-obvious causes
-- import or runtime boundary traps
-- environment assumptions that are easy to miss
-- workflow mismatches that look like bugs
-
-Each entry should stay short and high-signal.
-
-Recommended unit shape for confirmed gotchas:
-
-- `Symptom:` what someone sees when the trap appears
-- `Cause:` the real root cause or hidden boundary
-- `Correct path:` the fix, safe workflow, or source of truth
-
-## `next-steps.md`
-
-This file gives the next contributor a clean starting point.
-
-It should answer:
-
-- what to do next
-- why it matters
-- where to start
-- what “done” looks like
-
-Each next step is a memory unit with:
-
-- `Why:`
-- `Start:`
-- `Done when:`
-
-## Managed Ownership
-
-Tool-managed files include an ownership marker:
-
-```md
-<!-- agent-memory:file=project-map version=1 managed=true -->
+```text
+.agent-memory/state.json
 ```
 
-That marker tells `agent-memory update` and `agent-memory validate` that the file is safe to audit and refresh.
+It stores:
 
-If a file exists without a valid marker, the tool treats it as unmanaged:
+- `schemaVersion`
+- `generatorVersion`
+- `provider` metadata for the analysis run
+- `generatedAt`
+- `bundleHash`
+- `bundle`
 
-- `update` preserves it and writes a generated backup
-- `validate` reports it as unhealthy until the repository is migrated
+The `bundle` contains the durable memory payload:
 
-## `current-focus` Metadata
+- `project`
+- `projectMap`
+- `currentFocus`
+- `gotchas`
+- `nextSteps`
+- `validationCommands`
 
-`current-focus.md` also includes machine-readable metadata for validation freshness:
+## Projection Files
+
+The readable projection lives in:
+
+- `docs/agent-memory/README.md`
+- `docs/agent-memory/project-map.md`
+- `docs/agent-memory/current-focus.md`
+- `docs/agent-memory/gotchas.md`
+- `docs/agent-memory/next-steps.md`
+
+Each file starts with a versioned projection marker that includes the canonical `bundleHash`.
+
+Example:
 
 ```md
-<!-- agent-memory:current-focus generatedAt=<ISO> mode=<init|update> validatedAt=<ISO|none> -->
+<!-- agent-memory:projection file=project-map version=2 bundleHash=<sha256> -->
 ```
 
-This keeps the file human-readable while giving `validate` a stable source of truth.
+That marker lets `validate` confirm that the readable file still matches the current canonical bundle.
+
+## Entry Block
+
+`agent-memory` also writes a versioned entry block into the repository’s preferred top-level entry file.
+
+Marker shape:
+
+```md
+<!-- agent-memory:entry version=2 bundleHash=<sha256> start -->
+...
+<!-- agent-memory:entry end -->
+```
+
+This lets `validate` check that contributors still have a correct top-level pointer into the memory system.
+
+## Bundle Sections
+
+### `project`
+
+High-level identity and orientation:
+
+- project summary
+- ecosystem
+- package manager
+- workspace mechanism
+- recommended entry file
+- key paths
+
+### `projectMap`
+
+Stable structure:
+
+- modules
+- entrypoints
+- dense source areas
+- architecture notes
+- first files to read
+
+### `currentFocus`
+
+Current operational state:
+
+- summary
+- current state bullets
+- known risks
+- validation snapshot
+
+### `gotchas`
+
+Confirmed expensive traps:
+
+- `title`
+- `symptom`
+- `cause`
+- `correctPath`
+
+### `nextSteps`
+
+Actionable follow-ups:
+
+- `title`
+- `why`
+- `start`
+- `done`
+
+### `validationCommands`
+
+Up to two agent-recommended validation commands with:
+
+- `label`
+- `command`
+- `purpose`
+
+## Validation Freshness
+
+Validation freshness now comes from the canonical bundle, not from a special markdown metadata header.
+
+`currentFocus.validationSnapshot` carries:
+
+- `status`
+- `validatedAt`
+- `summary`
+- `results`
+- `suggestedNextActions`
+
+`validate` reads freshness from there and fails when the baseline is missing or stale.
+
+## Compatibility Note
+
+The old per-file managed-marker system is gone. There is no unmanaged/backup branch in the new model.
+
+If a repository still uses the previous format, rerun:
+
+```bash
+npx agent-memory init
+```

@@ -1,12 +1,10 @@
 # Commands
 
-`agent-memory` currently exposes three commands:
+`agent-memory` exposes three commands:
 
 - `init`
 - `update`
 - `validate`
-
-They are intentionally separate because they do different jobs.
 
 Install the package first:
 
@@ -20,7 +18,19 @@ or:
 pnpm add -D @agent-connect/memory
 ```
 
-Once installed, run the local CLI with `npx agent-memory ...`.
+Then run the local CLI with `npx agent-memory ...`.
+
+## Execution Notes
+
+`init` and `update` both run a repository analysis pass and then rewrite the canonical state plus all projections.
+
+If you need to control the runtime used for that analysis pass, override it with:
+
+```bash
+npx agent-memory init --provider=codex
+```
+
+If the selected runtime is unavailable, the command fails.
 
 ## `agent-memory init`
 
@@ -28,30 +38,23 @@ Once installed, run the local CLI with `npx agent-memory ...`.
 npx agent-memory init
 ```
 
-This command assumes `@agent-connect/memory` is already installed in the current project.
-
-Use `init` when a repository does not yet have project memory.
+Use `init` when a repository does not yet have canonical memory state, or when you want to rebuild it into the new model.
 
 What it does:
 
-- scans the project structure
-- creates `docs/agent-memory/`
-- writes the five initial memory files
-- injects a Project Memory section into the highest-priority entry file
-- optionally runs common validation commands and writes their summary into `current-focus.md`
+- gathers repository context
+- builds a fresh canonical bundle
+- creates or replaces `/.agent-memory/state.json`
+- rewrites `docs/agent-memory/*.md`
+- inserts or replaces the project memory entry block
 
-Non-interactive validation baseline:
+Non-interactive run with validation:
 
 ```bash
 npx agent-memory init --yes --validate
 ```
 
-Use `--validate` when you want `init` to run inferred validation commands without prompting. This is the recommended path for CI or scripted bootstrap flows.
-
-Use it when:
-
-- starting memory in a new project
-- introducing the model to an existing repository for the first time
+Use `--validate` when you want the analysis flow to recommend validation commands, run up to two of them, and fold the real results into the final bundle.
 
 ## `agent-memory update`
 
@@ -59,32 +62,25 @@ Use it when:
 npx agent-memory update
 ```
 
-This command assumes `@agent-connect/memory` is already installed in the current project.
-
-Use `update` when project memory already exists and needs to be refreshed.
+Use `update` when canonical state already exists and the repo has changed.
 
 What it does:
 
-- rescans the project
-- refreshes tool-managed memory files
-- repairs missing memory files or missing entry wiring
-- preserves unmanaged or legacy files and writes generated backups for manual merge
-- optionally refreshes the validation baseline in `current-focus.md`
+- loads the previous canonical bundle from `/.agent-memory/state.json`
+- rescans the repository
+- rebuilds the bundle from both old state and fresh repo context
+- rewrites canonical state and all projections
 
-Non-interactive validation refresh:
+Non-interactive run with validation:
 
 ```bash
 npx agent-memory update --yes --validate
 ```
 
-Use `--validate` when you want `update` to rerun inferred validation commands without prompting.
+Important behavior:
 
-Use it when:
-
-- structure changed
-- command semantics changed
-- a new current snapshot should replace the old one
-- a managed memory repo needs routine maintenance
+- `update` does not support the legacy static/managed-marker model
+- if `/.agent-memory/state.json` is missing, `update` fails and tells you to run `init`
 
 ## `agent-memory validate`
 
@@ -92,32 +88,26 @@ Use it when:
 npx agent-memory validate
 ```
 
-This command assumes `@agent-connect/memory` is already installed in the current project.
+This is a read-only audit.
 
-Use `validate` when you want a read-only audit of memory health.
+It checks:
 
-What it checks:
+- `/.agent-memory/state.json` exists
+- state JSON matches the canonical schema
+- `bundleHash` matches the stored bundle
+- projected markdown files exist and carry the current hash marker
+- the entry block exists and carries the current hash marker
+- bundle-referenced paths still exist
+- the validation baseline is present and fresh
 
-- memory directory presence
-- managed markers on all memory files
-- entry snippet wiring
-- `current-focus.md` metadata and validation freshness
+It does not:
 
-What it does not do:
-
-- it does not write files
-- it does not repair problems
-- it does not rerun project build or test commands
-
-Use it when:
-
-- enforcing memory quality in CI
-- checking whether a repo is still in a healthy memory state
-- confirming that `current-focus.md` still reflects a recent validation baseline
+- regenerate the bundle
+- rerun repository analysis
+- rewrite files
 
 ## Mental Model
 
-- install `@agent-connect/memory`
-- `init` = connect
-- `update` = refresh
-- `validate` = audit
+- `init` = create canonical state
+- `update` = refresh canonical state
+- `validate` = audit canonical state and projections

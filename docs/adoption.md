@@ -1,81 +1,83 @@
 # Adoption Guide
 
-This guide is for teams introducing `agent-memory` into an existing repository.
+This guide is for teams adopting the new canonical-state `agent-memory` model in an existing repository.
 
-## Start Small
+## First Run
 
-Use `init` first:
+Install the package and run:
 
 ```bash
 npm install -D @agent-connect/memory
 npx agent-memory init
 ```
 
-This gives the repository a first memory layer without requiring a large documentation migration.
+This will:
 
-## Treat The First Pass As A Baseline
+- build the first canonical memory bundle
+- create `/.agent-memory/state.json`
+- rewrite `docs/agent-memory/*.md`
+- insert or replace the top-level project memory block
 
-The first generated files are a starting point, not the final truth.
+## Important Breaking Change
 
-After `init`, review:
+This version does not preserve the previous static/managed-marker model.
 
-- `project-map.md`
-- `current-focus.md`
-- `next-steps.md`
+If your repository already used the old format, treat this as a rebuild:
 
-Replace vague generated wording with repo-specific language where it matters.
+```bash
+npx agent-memory init
+```
 
-## Legacy Repositories
+Do not expect `update` to migrate legacy files. `update` only works after the canonical state file exists.
 
-If the repository already has hand-written memory-like documents:
+## Runtime Control
 
-- keep them
-- do not overwrite them blindly
-- let `update` produce generated backups when markers are missing
+If you want to force a specific runtime for the analysis pass:
 
-This is intentional. The tool is designed to be conservative when it cannot prove ownership.
+```bash
+npx agent-memory init --provider=claude
+```
 
-## Human + Tool Collaboration
+## Recommended Team Workflow
 
-A healthy setup usually looks like this:
-
-- humans refine the generated model
-- the tool maintains files it explicitly owns
-- `validate` ensures the repository stays in a healthy state
-- `current-focus.md` is refreshed whenever the operational baseline changes
-
-The goal is not to automate all documentation. The goal is to make the most important shared context durable.
-
-## Suggested Team Workflow
-
-1. Run `init` once.
-2. Review and tighten the first generated memory files.
+1. Run `init` once to establish the canonical bundle.
+2. Read `docs/agent-memory/project-map.md` and `docs/agent-memory/current-focus.md`.
 3. Use `update` after structural or workflow changes.
-4. In CI or scripted bootstrap flows, prefer `init --yes --validate` or `update --yes --validate` before running `validate`.
-5. Add real gotchas only when they are painful enough to deserve permanent memory.
+4. Use `update --validate` when you want a fresh validation baseline in the canonical state.
+5. Use `validate` in CI or routine checks.
+
+## What To Review After `init`
+
+Even though the bundle is generated from a repository analysis pass, it is still worth reviewing:
+
+- project summary quality
+- module responsibilities
+- entrypoint descriptions
+- gotchas that should be kept or removed
+- next steps that feel too vague for your team
+
+The goal is not to preserve every generated sentence forever. The goal is to keep one trustworthy canonical memory bundle that can be refreshed when reality changes.
 
 ## When This Model Works Best
 
 `agent-memory` is especially useful when:
 
-- the project is long-lived
-- onboarding cost is high
-- contributors rotate frequently
-- coding agents are part of the day-to-day workflow
-- the repository has enough complexity that “just read the code” is too expensive
-
-## When To Keep It Light
-
-If a repository is tiny or short-lived, keep the memory layer small.
-
-The model works best when it stays focused. More files are not the goal. Better continuity is.
+- the repository is long-lived
+- onboarding is expensive
+- contributors rotate often
+- coding agents are part of daily engineering work
+- “just read the code” is too slow to recover context
 
 ## Package Name vs Command Name
 
-The published npm package is `@agent-connect/memory`.
+The npm package is:
 
-The installed command stays `agent-memory`, so the normal workflow after installation is:
+```text
+@agent-connect/memory
+```
+
+The installed command remains:
 
 ```bash
-npx agent-memory init
+agent-memory
 ```

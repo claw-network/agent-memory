@@ -4,11 +4,19 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![node >=18](https://img.shields.io/badge/node-%3E%3D18-417e38)](./package.json)
 
-Durable project memory for developers and coding agents.
+Canonical project memory for developers and coding agents.
 
-`agent-memory` gives a repository a lightweight memory layer that survives across handoffs, chats, PRs, and debugging sessions. It helps teams keep stable project structure, current status, expensive gotchas, and next working steps in one place that both humans and agents can reuse.
+`agent-memory` builds repository memory in two layers:
 
-Install `@agent-connect/memory` as a dev dependency, then run the local CLI with `npx agent-memory ...`.
+- it generates a canonical memory bundle in `/.agent-memory/state.json`
+- it projects that bundle into `docs/agent-memory/` for humans
+
+This is a breaking model change:
+
+- `init` rebuilds memory from repository evidence into the canonical-state system
+- `update` refreshes that same state instead of patching loosely managed markdown
+- `validate` audits state integrity, projection alignment, and validation freshness
+- old managed-marker repositories are not migrated in place; rerun `init`
 
 ## Installation
 
@@ -20,87 +28,124 @@ npm install -D @agent-connect/memory
 pnpm add -D @agent-connect/memory
 ```
 
-Once installed, `npx` resolves the local `agent-memory` binary from the current project.
+Once installed, run the local CLI with `npx agent-memory ...`.
 
-## Why This Exists
+## How It Works
 
-Most projects lose context in the same way:
+`agent-memory` does not treat markdown files as the source of truth anymore.
 
-- README files explain the product, but not the current engineering reality.
-- Issue threads and PRs contain decisions, but they are noisy and fragmented.
-- Chat history is useful in the moment, but weak as a long-term system of record.
-- Coding agents can move quickly, but only when a repository exposes stable, low-noise context.
+Instead, it:
 
-`agent-memory` is designed for that gap. It does not try to replace your docs stack. It adds a small, explicit memory layer for the context that teams repeatedly need but rarely maintain well.
+1. collects repository context
+2. synthesizes a structured memory bundle
+3. stores that bundle in `/.agent-memory/state.json`
+4. rewrites `docs/agent-memory/*.md` as projections of that state
+5. writes an entry block into the preferred top-level entry file
+
+If you need to control which runtime executes the analysis pass, use `--provider=auto|codex|claude`.
 
 ## Core Model
 
-`agent-memory` initializes a `docs/agent-memory/` directory with five files, each with a single job:
+The canonical source of truth is:
 
-- `README.md`
-  Explains how the memory system works and how to maintain it.
-- `project-map.md`
-  Captures stable structure, module boundaries, and key entrypoints.
-- `current-focus.md`
-  Holds the current single-snapshot status, including the latest validation baseline.
-- `gotchas.md`
-  Stores high-cost traps, noisy failures, and subtle boundaries.
-- `next-steps.md`
-  Gives the next contributor a practical starting point.
+- `/.agent-memory/state.json`
 
-This is not a generic template dump. It is a role-based memory model: stable map, current state, costly lessons, and immediate action.
+Human-readable projections live in:
 
-## Memory Units
+- `docs/agent-memory/README.md`
+- `docs/agent-memory/project-map.md`
+- `docs/agent-memory/current-focus.md`
+- `docs/agent-memory/gotchas.md`
+- `docs/agent-memory/next-steps.md`
 
-The file model is only one layer of the system.
+An entry block is also written into the preferred top-level entry file, using this order:
 
-- Files decide where a kind of context belongs.
-- Memory units decide how repeated high-value records are written inside those files.
-- `next-steps.md` and the follow-up section in `current-focus.md` use `Why:`, `Start:`, and `Done when:` units.
-- `gotchas.md` uses confirmed gotcha units with `Symptom:`, `Cause:`, and `Correct path:`.
+1. `AGENTS.md`
+2. `CLAUDE.md`
+3. `README.md`
+4. fallback create `AGENTS.md`
 
-This keeps the memory human-readable first while making future parsing and automation easier. It is still a lightweight repository memory layer, not a runtime memory database.
+## Commands
 
-## Quickstart
-
-### 1. Initialize project memory
+### Initialize canonical memory
 
 ```bash
 npx agent-memory init
 ```
 
-Bootstraps `docs/agent-memory/` and wires a Project Memory entry section into the highest-priority entry file it can find.
-Use `npx agent-memory init --yes --validate` in CI or other non-interactive bootstrap flows when you want to establish a validation baseline immediately.
+This command:
 
-### 2. Refresh managed memory
+- collects fresh repository context
+- rebuilds the canonical memory bundle
+- creates or replaces `/.agent-memory/state.json`
+- rewrites `docs/agent-memory/*.md`
+- inserts or replaces the project memory entry block
+
+Run with validation:
+
+```bash
+npx agent-memory init --yes --validate
+```
+
+### Refresh canonical memory
 
 ```bash
 npx agent-memory update
 ```
 
-Refreshes managed memory files, repairs missing pieces, and keeps legacy unmanaged files safe by writing generated backups instead of overwriting them.
-Use `npx agent-memory update --yes --validate` to refresh managed memory and rewrite the validation baseline without prompts.
+This command requires an existing `/.agent-memory/state.json`. It combines the previous canonical bundle with fresh repository context, then rewrites canonical state and projections.
 
-### 3. Audit memory health
+Run with validation:
+
+```bash
+npx agent-memory update --yes --validate
+```
+
+### Audit memory health
 
 ```bash
 npx agent-memory validate
 ```
 
-Runs a read-only audit of memory presence, managed ownership, entry integration, and `current-focus` validation freshness.
+This audits:
 
-## How It Works
+- `/.agent-memory/state.json` existence and schema
+- state bundle hash integrity
+- projection markers and hash alignment
+- entry block presence and hash alignment
+- referenced bundle paths
+- validation baseline freshness
 
-- Scoped package, stable command
-  The npm package name is `@agent-connect/memory`, while the installed CLI command stays `agent-memory`.
-- Static scan first
-  The tool inspects repo structure, manifests, entry files, scripts, and source layout before generating memory.
-- Conservative merge strategy
-  Missing files are created, but unmanaged files are preserved and get `.generated.bak.*` outputs for manual merge.
-- Managed ownership markers
-  Tool-managed files are explicitly marked so `update` can refresh only what it safely owns.
-- Validation baseline tracking
-  `current-focus.md` records machine-readable metadata so `validate` can check whether the latest baseline exists and is still fresh.
+## Why This Exists
+
+Most repositories still lose high-value engineering context:
+
+- architecture is scattered across manifests, folders, and partial docs
+- current state lives in chats, PRs, and short-lived notes
+- costly gotchas are rediscovered repeatedly
+- coding agents work best when a repo exposes stable, low-noise context
+
+`agent-memory` turns that into a small canonical bundle that can be regenerated, audited, and projected back into repo-native docs.
+
+## Design Principles
+
+- canonical machine-readable state first
+- human-readable projections second
+- repository-grounded synthesis instead of static template guessing
+- versioned markers and hash-based validation
+- short, durable docs over sprawling internal wikis
+
+## Breaking Change
+
+This release does not preserve the old managed-marker model.
+
+If a repository already uses the previous static/template-based `agent-memory`, rerun:
+
+```bash
+npx agent-memory init
+```
+
+to rebuild it into the new canonical-state model.
 
 ## Learn More
 
@@ -109,34 +154,6 @@ Runs a read-only audit of memory presence, managed ownership, entry integration,
 - [File Model](./docs/file-model.md)
 - [Adoption Guide](./docs/adoption.md)
 - [Contributing](./CONTRIBUTING.md)
-
-## Command Summary
-
-| Command | Purpose |
-| --- | --- |
-| `agent-memory init` | Bootstrap project memory and initial entry wiring |
-| `agent-memory update` | Refresh managed memory and repair missing pieces |
-| `agent-memory validate` | Audit memory health and validation baseline freshness |
-
-## Who It Is For
-
-`agent-memory` is for repositories where context loss is expensive:
-
-- long-lived product codebases
-- multi-package repos
-- teams with frequent handoffs
-- projects using coding agents in day-to-day development
-- maintainers who want a lighter alternative to sprawling internal docs
-
-It is designed for developers and agents equally. Humans get faster onboarding and less re-discovery. Agents get a stable context layer that reduces noisy exploration.
-
-## Roadmap
-
-Current direction:
-
-- strengthen the memory model and command ergonomics
-- improve adoption guidance for existing repositories
-- add a future `doctor` command for deeper advice beyond strict validation
 
 ## License
 

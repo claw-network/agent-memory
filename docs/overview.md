@@ -1,69 +1,79 @@
 # Overview
 
-`agent-memory` is a repository-level memory layer for developers and coding agents.
+`agent-memory` is a repository-level memory layer for developers and coding agents, but its source of truth is no longer a set of hand-managed markdown files.
 
-It exists because most projects already have documentation, but still lack durable engineering context:
+The new model is:
 
-- structure is scattered across manifests, source trees, and partial READMEs
-- current status lives in chats, PRs, and temporary notes
-- costly lessons are remembered by people, not by the repository
-- next steps are often obvious only to whoever touched the code most recently
+- repository context is gathered into one analysis pass
+- that analysis produces a structured memory bundle
+- `agent-memory` stores that bundle in `/.agent-memory/state.json`
+- readable markdown files in `docs/agent-memory/` are projected from that canonical state
 
-`agent-memory` addresses that gap with a small memory model that is easy to initialize, safe to refresh, and explicit enough for automation.
+## Why This Shift Matters
+
+The old static-template approach was cheap, but too shallow for real projects. It could identify manifests and source folders, yet it could not reliably explain:
+
+- what modules are actually for
+- which entrypoints matter most
+- what the current operating picture is
+- which gotchas are truly expensive
+- what the next contributor should do first
+
+The new architecture keeps local determinism where it matters, but moves the hard part into bundle synthesis: turning repository evidence into trustworthy project memory.
 
 ## The Model
 
-The model separates context by job, not by author:
+The system now has two layers:
 
-- `project-map.md`
-  Stable structure and architecture
-- `current-focus.md`
-  Current single-snapshot status
-- `gotchas.md`
-  Expensive traps and noisy failures
-- `next-steps.md`
-  Clean entrypoints for the next contributor
-- memory `README.md`
-  Maintenance rules and scope boundary
+### Canonical layer
 
-This separation matters because long-lived projects need both:
+- `/.agent-memory/state.json`
 
-- stable context that changes slowly
-- operational context that changes often
+This is the machine-readable source of truth. It contains:
 
-Putting both into one file usually creates noise. Splitting them makes maintenance lighter and reuse easier.
+- schema and generator version
+- execution metadata
+- generation timestamp
+- `bundleHash`
+- the full structured bundle
 
-## Files And Units
+### Projection layer
 
-`agent-memory` works at two levels:
+- `docs/agent-memory/README.md`
+- `docs/agent-memory/project-map.md`
+- `docs/agent-memory/current-focus.md`
+- `docs/agent-memory/gotchas.md`
+- `docs/agent-memory/next-steps.md`
 
-- files organize context by job
-- memory units organize repeated records inside those files
+These are generated projections of the canonical state. They are meant for humans to read quickly, while `validate` can still audit them through versioned hash markers.
 
-Examples:
+## Command Semantics
 
-- `next-steps.md` uses follow-up units with `Why:`, `Start:`, and `Done when:`
-- `current-focus.md` reuses that same follow-up unit shape for short operational follow-ups
-- `gotchas.md` uses confirmed gotcha units with `Symptom:`, `Cause:`, and `Correct path:`
+- `init` creates or replaces canonical state
+- `update` refreshes canonical state from existing state plus fresh repo context
+- `validate` audits canonical state and projection alignment
 
-This keeps the system compact. Files provide durable categories. Units provide the smallest reusable records. In this first version, unit structure lives in generated templates and docs rather than in stricter parsing or validation rules.
-
-## Why It Works For Humans And Agents
-
-Developers benefit because the repository becomes easier to re-enter after time away.
-
-Coding agents benefit because they can ground themselves in a low-noise context layer before exploring code or asking follow-up questions.
-
-The result is not “AI-specific documentation.” It is a collaboration structure that improves continuity for everyone touching the repo.
+This means the repo always has one authoritative bundle, not several partially managed files pretending to be authoritative.
 
 ## Design Principles
 
-- small, durable surface area
-- conservative updates
-- explicit tool ownership
-- files for context categories, units for reusable records
-- readable by humans first, but machine-auditable where needed
-- current state as a snapshot, not a running changelog
+- canonical state first
+- projections are disposable and reproducible
+- repository-grounded analysis over static guessing
+- hash-based validation over marker ownership heuristics
+- short, durable outputs over sprawling generated prose
+
+## Compatibility
+
+This model is intentionally breaking.
+
+Legacy repositories using the previous managed-marker approach should rerun:
+
+```bash
+npx agent-memory init
+```
+
+to enter the canonical-state system.
 
 ## Related Pages
 
