@@ -2,6 +2,7 @@ export type PrimaryEcosystem = "node" | "python" | "rust" | "go" | "generic";
 export type GenerationMode = "init" | "update";
 export type MemoryFileId = "readme" | "project-map" | "current-focus" | "gotchas" | "next-steps";
 export type ManagedFileState = "missing" | "managed" | "unmanaged";
+export type AuditStatus = "pass" | "fail" | "warn";
 
 export interface WorkspaceModule {
   name: string;
@@ -72,4 +73,16 @@ export interface ManagedFileOwnership {
 export interface InitOptions {
   cwd: string;
   yes: boolean;
+}
+
+export interface CurrentFocusMetadata {
+  generatedAt: string;
+  mode: GenerationMode;
+  validatedAt: string | "none";
+}
+
+export interface AuditFinding {
+  status: AuditStatus;
+  code: string;
+  message: string;
 }

@@ -3,6 +3,7 @@
 import { cwd, exit } from "node:process";
 import { runInit } from "./commands/init";
 import { runUpdate } from "./commands/update";
+import { runValidate } from "./commands/validate";
 
 interface ParsedArgs {
   command: string | null;
@@ -15,10 +16,12 @@ function printHelp(): void {
   console.log("Usage:");
   console.log("  agent-memory init [--yes]");
   console.log("  agent-memory update [--yes]");
+  console.log("  agent-memory validate");
   console.log("");
   console.log("Commands:");
   console.log("  init    Generate docs/agent-memory and wire in a Project Memory entry snippet.");
   console.log("  update  Refresh managed project memory and repair missing memory pieces.");
+  console.log("  validate  Audit project memory health and current-focus validation freshness.");
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -71,6 +74,13 @@ async function main(): Promise<void> {
     }
     case "update": {
       const code = await runUpdate({ cwd: cwd(), yes: parsed.yes });
+      if (code !== 0) {
+        exit(code);
+      }
+      return;
+    }
+    case "validate": {
+      const code = await runValidate(cwd());
       if (code !== 0) {
         exit(code);
       }

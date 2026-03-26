@@ -10,6 +10,10 @@ npx agent-memory init
 npx agent-memory update
 ```
 
+```bash
+npx agent-memory validate
+```
+
 `agent-memory` creates a `docs/agent-memory/` directory in your project and wires in a lightweight entry section so future collaborators know where to look first.
 
 ## What it generates
@@ -43,6 +47,7 @@ If none exist, it creates a minimal `AGENTS.md`.
 ```bash
 npx agent-memory init
 npx agent-memory update
+npx agent-memory validate
 ```
 
 ### Non-interactive
@@ -90,6 +95,18 @@ Examples:
 - `cargo test`
 - `go test ./...`
 
+## Validate command
+
+`agent-memory validate` is a read-only audit command.
+
+It checks:
+- the presence of `docs/agent-memory/`
+- managed markers on all memory files
+- Project Memory entry snippet wiring
+- `current-focus.md` metadata and validation baseline freshness
+
+It does **not** write files and does **not** run project build/test commands.
+
 ## Development
 
 ```bash
@@ -97,9 +114,11 @@ npm install
 npm run build
 node dist/cli.js init --yes
 node dist/cli.js update --yes
+node dist/cli.js validate
 npm pack
 npx --yes --package=./agent-memory-0.1.0.tgz agent-memory init --yes
 npx --yes --package=./agent-memory-0.1.0.tgz agent-memory update --yes
+npx --yes --package=./agent-memory-0.1.0.tgz agent-memory validate
 ```
 
 ## Planned commands
@@ -107,4 +126,3 @@ npx --yes --package=./agent-memory-0.1.0.tgz agent-memory update --yes
 These are intentionally not part of v1 yet:
 
 - `agent-memory doctor`
-- `agent-memory validate`
