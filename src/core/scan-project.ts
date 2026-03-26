@@ -18,6 +18,10 @@ interface PackageJsonLike {
   exports?: unknown;
 }
 
+interface CargoPackageLike {
+  name?: string;
+}
+
 const ROOT_SIGNAL_FILES = [
   ".git",
   "package.json",
@@ -155,7 +159,7 @@ function inferPackageManager(
 function inferWorkspaceManager(
   packageJson: PackageJsonLike | null,
   signals: string[],
-  primaryEcosystem: PrimaryEcosystem,
+  cargoWorkspaceMembers: string[],
 ): string | null {
   if (signals.includes("pnpm-workspace.yaml")) {
     return "pnpm workspace";
@@ -165,7 +169,7 @@ function inferWorkspaceManager(
     return "package.json workspaces";
   }
 
-  if (primaryEcosystem === "rust") {
+  if (cargoWorkspaceMembers.length > 0) {
     return "cargo workspace";
   }
 
@@ -215,13 +219,21 @@ function parseWorkspacePatterns(packageJson: PackageJsonLike | null, pnpmWorkspa
 }
 
 async function expandWorkspacePattern(rootDir: string, pattern: string): Promise<string[]> {
+  return expandWorkspacePatternForManifest(rootDir, pattern, "package.json");
+}
+
+async function expandWorkspacePatternForManifest(
+  rootDir: string,
+  pattern: string,
+  manifestName: "Cargo.toml" | "package.json",
+): Promise<string[]> {
   const cleanedPattern = pattern.replace(/\\/g, "/").replace(/^\.?\//, "");
   const segments = cleanedPattern.split("/").filter(Boolean);
   const matches = new Set<string>();
 
   async function walk(baseDir: string, index: number): Promise<void> {
     if (index >= segments.length) {
-      if (await exists(join(baseDir, "package.json"))) {
+      if (await exists(join(baseDir, manifestName))) {
         matches.add(baseDir);
       }
       return;
@@ -259,6 +271,42 @@ async function expandWorkspacePattern(rootDir: string, pattern: string): Promise
   return Array.from(matches).sort((a, b) => a.localeCompare(b));
 }
 
+function parseTomlStringArray(raw: string, key: string): string[] {
+  const inlineMatch = raw.match(new RegExp(`(?:^|\\n)\\s*${key}\\s*=\\s*\\[(.*?)\\]`, "s"));
+  if (!inlineMatch) {
+    return [];
+  }
+
+  return Array.from(inlineMatch[1].matchAll(/"([^"]+)"/g), (match) => match[1]);
+}
+
+function parseCargoWorkspaceMembers(cargoToml: string | null): string[] {
+  if (!cargoToml) {
+    return [];
+  }
+
+  const workspaceMatch = cargoToml.match(/(?:^|\n)\s*\[workspace\]\s*([\s\S]*?)(?=\n\s*\[[^\]]+\]|\s*$)/);
+  if (!workspaceMatch) {
+    return [];
+  }
+
+  return parseTomlStringArray(workspaceMatch[1], "members");
+}
+
+function parseCargoPackage(cargoToml: string | null): CargoPackageLike | null {
+  if (!cargoToml) {
+    return null;
+  }
+
+  const packageMatch = cargoToml.match(/(?:^|\n)\s*\[package\]\s*([\s\S]*?)(?=\n\s*\[[^\]]+\]|\s*$)/);
+  if (!packageMatch) {
+    return null;
+  }
+
+  const nameMatch = packageMatch[1].match(/(?:^|\n)\s*name\s*=\s*"([^"]+)"/);
+  return nameMatch ? { name: nameMatch[1] } : null;
+}
+
 function inferModuleRole(modulePath: string): string {
   const normalized = modulePath.replace(/\\/g, "/").toLowerCase();
 
@@ -293,12 +341,18 @@ async function collectWorkspaceModules(
   rootDir: string,
   packageJson: PackageJsonLike | null,
   pnpmWorkspace: string | null,
+  cargoWorkspaceMembers: string[],
 ): Promise<WorkspaceModule[]> {
-  const patterns = parseWorkspacePatterns(packageJson, pnpmWorkspace);
   const moduleDirs = new Set<string>();
 
-  for (const pattern of patterns) {
+  for (const pattern of parseWorkspacePatterns(packageJson, pnpmWorkspace)) {
     for (const match of await expandWorkspacePattern(rootDir, pattern)) {
+      moduleDirs.add(match);
+    }
+  }
+
+  for (const pattern of cargoWorkspaceMembers) {
+    for (const match of await expandWorkspacePatternForManifest(rootDir, pattern, "Cargo.toml")) {
       moduleDirs.add(match);
     }
   }
@@ -317,7 +371,7 @@ async function collectWorkspaceModules(
         }
 
         const candidate = join(baseDir, entry.name);
-        if (await exists(join(candidate, "package.json"))) {
+        if ((await exists(join(candidate, "package.json"))) || (await exists(join(candidate, "Cargo.toml")))) {
           moduleDirs.add(candidate);
         }
       }
@@ -328,8 +382,9 @@ async function collectWorkspaceModules(
 
   for (const moduleDir of Array.from(moduleDirs).sort((a, b) => a.localeCompare(b))) {
     const manifest = await readJson<PackageJsonLike>(join(moduleDir, "package.json"));
+    const cargoManifest = parseCargoPackage(await readText(join(moduleDir, "Cargo.toml")));
     modules.push({
-      name: manifest?.name ?? basename(moduleDir),
+      name: manifest?.name ?? cargoManifest?.name ?? basename(moduleDir),
       path: relative(rootDir, moduleDir) || ".",
       role: inferModuleRole(relative(rootDir, moduleDir) || "."),
     });
@@ -416,12 +471,14 @@ async function collectKeyEntryFiles(
   }
 
   for (const moduleInfo of workspaceModules.slice(0, 4)) {
-    const moduleManifest = join(rootDir, moduleInfo.path, "package.json");
-    if (await exists(moduleManifest)) {
-      candidates.add(relative(rootDir, moduleManifest));
+    for (const manifestName of ["package.json", "Cargo.toml"] as const) {
+      const moduleManifest = join(rootDir, moduleInfo.path, manifestName);
+      if (await exists(moduleManifest)) {
+        candidates.add(relative(rootDir, moduleManifest));
+      }
     }
 
-    for (const file of ["src/index.ts", "src/main.ts", "src/cli.ts"]) {
+    for (const file of ["src/index.ts", "src/main.ts", "src/cli.ts", "src/lib.rs", "src/main.rs"]) {
       const candidate = join(rootDir, moduleInfo.path, file);
       if (await exists(candidate)) {
         candidates.add(relative(rootDir, candidate));
@@ -630,10 +687,12 @@ export async function scanProject(rootDir: string): Promise<ProjectScan> {
   const projectSignals = Array.from(allSignals).sort((a, b) => a.localeCompare(b));
   const packageJson = await readJson<PackageJsonLike>(join(rootDir, "package.json"));
   const pnpmWorkspace = await readText(join(rootDir, "pnpm-workspace.yaml"));
+  const cargoToml = await readText(join(rootDir, "Cargo.toml"));
+  const cargoWorkspaceMembers = parseCargoWorkspaceMembers(cargoToml);
   const primaryEcosystem = detectPrimaryEcosystem(projectSignals);
   const packageManager = inferPackageManager(packageJson, projectSignals);
-  const workspaceManager = inferWorkspaceManager(packageJson, projectSignals, primaryEcosystem);
-  const workspaceModules = await collectWorkspaceModules(rootDir, packageJson, pnpmWorkspace);
+  const workspaceManager = inferWorkspaceManager(packageJson, projectSignals, cargoWorkspaceMembers);
+  const workspaceModules = await collectWorkspaceModules(rootDir, packageJson, pnpmWorkspace, cargoWorkspaceMembers);
   const rootScripts = Object.keys(packageJson?.scripts ?? {}).sort((a, b) => a.localeCompare(b));
   const keyEntryFiles = await collectKeyEntryFiles(rootDir, packageJson, workspaceModules);
   const denseSourceDirs = await collectDenseSourceDirs(rootDir, workspaceModules);
