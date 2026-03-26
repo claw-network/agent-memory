@@ -73,6 +73,7 @@ export interface ManagedFileOwnership {
 export interface InitOptions {
   cwd: string;
   yes: boolean;
+  validate: boolean;
 }
 
 export interface CurrentFocusMetadata {

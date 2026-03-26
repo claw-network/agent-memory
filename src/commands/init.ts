@@ -47,7 +47,7 @@ export async function runInit(options: InitOptions): Promise<number> {
   console.log("");
   console.log("Project memory initialized.");
 
-  if (options.yes) {
+  if (!options.validate && options.yes) {
     console.log("Validation commands were skipped because --yes uses the default non-validation path.");
     return 0;
   }
@@ -57,7 +57,9 @@ export async function runInit(options: InitOptions): Promise<number> {
     return 0;
   }
 
-  const shouldValidate = await confirm("Run common validation commands and refresh current-focus.md?", false);
+  const shouldValidate = options.validate
+    ? true
+    : await confirm("Run common validation commands and refresh current-focus.md?", false);
   if (!shouldValidate) {
     console.log("Validation commands were not run.");
     return 0;

@@ -50,7 +50,7 @@ The goal is not to automate all documentation. The goal is to make the most impo
 1. Run `init` once.
 2. Review and tighten the first generated memory files.
 3. Use `update` after structural or workflow changes.
-4. Use `validate` in CI or pre-release checks.
+4. In CI or scripted bootstrap flows, prefer `init --yes --validate` or `update --yes --validate` before running `validate`.
 5. Add real gotchas only when they are painful enough to deserve permanent memory.
 
 ## When This Model Works Best

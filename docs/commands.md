@@ -24,6 +24,14 @@ What it does:
 - injects a Project Memory section into the highest-priority entry file
 - optionally runs common validation commands and writes their summary into `current-focus.md`
 
+Non-interactive validation baseline:
+
+```bash
+npx agent-memory init --yes --validate
+```
+
+Use `--validate` when you want `init` to run inferred validation commands without prompting. This is the recommended path for CI or scripted bootstrap flows.
+
 Use it when:
 
 - starting memory in a new project
@@ -44,6 +52,14 @@ What it does:
 - repairs missing memory files or missing entry wiring
 - preserves unmanaged or legacy files and writes generated backups for manual merge
 - optionally refreshes the validation baseline in `current-focus.md`
+
+Non-interactive validation refresh:
+
+```bash
+npx agent-memory update --yes --validate
+```
+
+Use `--validate` when you want `update` to rerun inferred validation commands without prompting.
 
 Use it when:
 

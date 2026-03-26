@@ -49,6 +49,7 @@ npx agent-memory init
 ```
 
 Bootstraps `docs/agent-memory/` and wires a Project Memory entry section into the highest-priority entry file it can find.
+Use `npx agent-memory init --yes --validate` in CI or other non-interactive bootstrap flows when you want to establish a validation baseline immediately.
 
 ### 2. Refresh managed memory
 
@@ -57,6 +58,7 @@ npx agent-memory update
 ```
 
 Refreshes managed memory files, repairs missing pieces, and keeps legacy unmanaged files safe by writing generated backups instead of overwriting them.
+Use `npx agent-memory update --yes --validate` to refresh managed memory and rewrite the validation baseline without prompts.
 
 ### 3. Audit memory health
 

@@ -8,14 +8,15 @@ import { runValidate } from "./commands/validate";
 interface ParsedArgs {
   command: string | null;
   yes: boolean;
+  validate: boolean;
 }
 
 function printHelp(): void {
   console.log("agent-memory");
   console.log("");
   console.log("Usage:");
-  console.log("  agent-memory init [--yes]");
-  console.log("  agent-memory update [--yes]");
+  console.log("  agent-memory init [--yes] [--validate]");
+  console.log("  agent-memory update [--yes] [--validate]");
   console.log("  agent-memory validate");
   console.log("");
   console.log("Commands:");
@@ -27,6 +28,7 @@ function printHelp(): void {
 function parseArgs(argv: string[]): ParsedArgs {
   const args = [...argv];
   let yes = false;
+  let validate = false;
   let command: string | null = null;
 
   while (args.length > 0) {
@@ -37,6 +39,11 @@ function parseArgs(argv: string[]): ParsedArgs {
 
     if (value === "--yes" || value === "-y") {
       yes = true;
+      continue;
+    }
+
+    if (value === "--validate") {
+      validate = true;
       continue;
     }
 
@@ -53,7 +60,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     throw new Error(`Unknown argument: ${value}`);
   }
 
-  return { command, yes };
+  return { command, yes, validate };
 }
 
 async function main(): Promise<void> {
@@ -66,14 +73,14 @@ async function main(): Promise<void> {
 
   switch (parsed.command) {
     case "init": {
-      const code = await runInit({ cwd: cwd(), yes: parsed.yes });
+      const code = await runInit({ cwd: cwd(), yes: parsed.yes, validate: parsed.validate });
       if (code !== 0) {
         exit(code);
       }
       return;
     }
     case "update": {
-      const code = await runUpdate({ cwd: cwd(), yes: parsed.yes });
+      const code = await runUpdate({ cwd: cwd(), yes: parsed.yes, validate: parsed.validate });
       if (code !== 0) {
         exit(code);
       }

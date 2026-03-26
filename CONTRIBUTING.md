@@ -13,7 +13,9 @@ Useful local smoke tests:
 
 ```bash
 node dist/cli.js init --yes
+node dist/cli.js init --yes --validate
 node dist/cli.js update --yes
+node dist/cli.js update --yes --validate
 node dist/cli.js validate
 ```
 
