@@ -1,0 +1,34 @@
+{
+  "name": "agent-memory",
+  "version": "0.1.0",
+  "description": "Bootstrap durable project memory for developers and coding agents.",
+  "license": "MIT",
+  "bin": {
+    "agent-memory": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "agent",
+    "developer-tools",
+    "documentation",
+    "knowledge-base",
+    "project-memory",
+    "scaffolding"
+  ],
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "typescript": "^5.9.3"
+  }
+}

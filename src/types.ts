@@ -1,0 +1,58 @@
+export type PrimaryEcosystem = "node" | "python" | "rust" | "go" | "generic";
+
+export interface WorkspaceModule {
+  name: string;
+  path: string;
+  role: string;
+}
+
+export interface ValidationCommand {
+  label: string;
+  command: string[];
+}
+
+export interface ValidationResult {
+  label: string;
+  command: string;
+  status: "passed" | "failed" | "skipped" | "unavailable";
+  summary: string;
+}
+
+export interface ProjectScan {
+  rootDir: string;
+  generatedAt: string;
+  projectName: string;
+  projectSignals: string[];
+  primaryEcosystem: PrimaryEcosystem;
+  packageManager: string | null;
+  workspaceManager: string | null;
+  topLevelDirs: string[];
+  topLevelFiles: string[];
+  rootScripts: string[];
+  workspaceModules: WorkspaceModule[];
+  keyEntryFiles: string[];
+  denseSourceDirs: string[];
+  gotchas: string[];
+  nextSteps: string[];
+  validationCandidates: ValidationCommand[];
+}
+
+export interface MemoryFiles {
+  readme: string;
+  projectMap: string;
+  currentFocus: string;
+  gotchas: string;
+  nextSteps: string;
+  entrySnippet: string;
+}
+
+export interface PlannedChange {
+  kind: "create" | "patch" | "backup" | "skip";
+  path: string;
+  note: string;
+}
+
+export interface InitOptions {
+  cwd: string;
+  yes: boolean;
+}
