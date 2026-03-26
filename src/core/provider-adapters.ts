@@ -5,7 +5,6 @@ import { join } from "node:path";
 import type {
   ProviderInvocation,
   ProviderInvocationResult,
-  ProviderMetadata,
   ProviderName,
   ProviderPreference,
 } from "../types";
