@@ -106,3 +106,14 @@ The core principle for the next phase is simple:
 - make retrieval explainable
 
 That is the line between “generated docs” and a real repository memory system.
+
+## Phase 1 Status
+
+Phase 1 exit criteria are currently met in the implementation baseline:
+
+- importer coverage includes static redacted Claude/Codex fixture snapshots
+- recall supports no-op exits and summary-first previews
+- query supports evidence-insufficient responses and stable citations
+- validate distinguishes structural failures from maintenance warnings
+
+Future work should now treat Phase 1 as the stabilization baseline and move incrementally into Phase 2.

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { ENTRY_VERSION, PROJECTION_VERSION, RECALL_WARN_EVENT_COUNT, VALIDATION_MAX_AGE_DAYS } from "./constants";
 import { parseEntryMarker, parseProjectionMarker, projectState } from "./bundle-projector";
 import { validateHistoryEventShape, validateHistorySourceShape, validateStateShape } from "./bundle-schema";
+import { isSupportedSourceType } from "./import-framework";
 import { getCheckpointsDir, getEventsPath, getSourcesPath, listCheckpointIds, readHistoryEvents, readLatestCheckpoint, readSources } from "./history-store";
 import { computeBundleHash, getStatePath } from "./state-store";
 import type { AgentMemoryState, AuditFinding } from "../types";
@@ -46,6 +47,18 @@ function collectReferencedPaths(state: AgentMemoryState): string[] {
       ...state.bundle.projectMap.firstFilesToRead,
     ]),
   );
+}
+
+function estimateQueryCoverage(state: AgentMemoryState, historyEventCount: number, hasCheckpoint: boolean): number {
+  let coverage = 0;
+  coverage += 3; // project / projectMap / currentFocus
+  coverage += Math.min(state.bundle.gotchas.length, 3);
+  coverage += Math.min(state.bundle.nextSteps.length, 3);
+  coverage += Math.min(historyEventCount, 3);
+  if (hasCheckpoint) {
+    coverage += 1;
+  }
+  return coverage;
 }
 
 export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
@@ -178,7 +191,7 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
       findings.push({
         status: "warn",
         code: "recall:backlog",
-        message: `${unrecalledEvents.length} unrecalled history events are waiting to be consolidated.`,
+        message: `${unrecalledEvents.length} unrecalled history events are waiting to be consolidated. Run \`agent-memory recall\`.`,
       });
     } else {
       findings.push({
@@ -236,6 +249,50 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
         message: "state.json importSourceCount matches the source registry.",
       });
     }
+
+    for (const source of sources) {
+      if (!isSupportedSourceType(source.type)) {
+        findings.push({
+          status: "fail",
+          code: `sources:type:${source.id}`,
+          message: `History source ${source.id} uses an unsupported type: ${source.type}`,
+        });
+      } else {
+        findings.push({
+          status: "pass",
+          code: `sources:type:${source.id}`,
+          message: `History source ${source.id} uses a supported type.`,
+        });
+      }
+
+      if (!(await exists(source.path))) {
+        findings.push({
+          status: "fail",
+          code: `sources:path:${source.id}`,
+          message: `History source ${source.id} path is not reachable: ${source.path}`,
+        });
+      } else {
+        findings.push({
+          status: "pass",
+          code: `sources:path:${source.id}`,
+          message: `History source ${source.id} path is reachable.`,
+        });
+      }
+
+      if (source.lastSyncStatus === "failed") {
+        findings.push({
+          status: "warn",
+          code: `sources:sync:${source.id}`,
+          message: `History source ${source.id} last sync failed${source.lastSyncError ? `: ${source.lastSyncError}` : "."} Imported state is still usable, but this source should be resynced.`,
+        });
+      } else {
+        findings.push({
+          status: "pass",
+          code: `sources:sync:${source.id}`,
+          message: `History source ${source.id} has no active sync failure.`,
+        });
+      }
+    }
   }
 
   const checkpointsDir = getCheckpointsDir(rootDir);
@@ -280,6 +337,21 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
           message: "The latest checkpoint is present and aligned with the canonical state.",
         });
       }
+    }
+
+    const queryCoverage = estimateQueryCoverage(state, state.maintenance.historyEventCount, checkpointIds.length > 0);
+    if (queryCoverage < 5) {
+      findings.push({
+        status: "warn",
+        code: "query:coverage",
+        message: "Query evidence coverage is still sparse. Import more history or run `agent-memory recall` before relying on query output.",
+      });
+    } else {
+      findings.push({
+        status: "pass",
+        code: "query:coverage",
+        message: "Query evidence coverage is healthy.",
+      });
     }
   }
 

@@ -14,6 +14,34 @@ function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
 }
 
+export function summarizeRecallDiff(diffSummary: RecallDiffSummary | null | undefined): string {
+  if (!diffSummary) {
+    return "No detailed recall summary recorded.";
+  }
+
+  const parts: string[] = [];
+  if (diffSummary.addedGotchas.length > 0) {
+    parts.push(`added gotchas: ${diffSummary.addedGotchas.join(", ")}`);
+  }
+  if (diffSummary.removedGotchas.length > 0) {
+    parts.push(`removed gotchas: ${diffSummary.removedGotchas.join(", ")}`);
+  }
+  if (diffSummary.addedNextSteps.length > 0) {
+    parts.push(`added next steps: ${diffSummary.addedNextSteps.join(", ")}`);
+  }
+  if (diffSummary.removedNextSteps.length > 0) {
+    parts.push(`removed next steps: ${diffSummary.removedNextSteps.join(", ")}`);
+  }
+  if (diffSummary.currentFocusChanged) {
+    parts.push("updated current focus");
+  }
+  if (diffSummary.validationChanged) {
+    parts.push("updated validation snapshot");
+  }
+
+  return parts.length > 0 ? parts.join("; ") : "No durable memory changes were needed.";
+}
+
 export function buildSignalsFromBundle(bundle: AgentMemoryBundle, validations: ValidationResult[] = []): HistorySignalSet {
   return {
     decisions: uniqueStrings([
@@ -46,7 +74,7 @@ export function createToolRunEvent(input: {
   const createdAt = input.createdAt ?? input.state.generatedAt;
   const summary =
     input.commandName === "recall"
-      ? `Recalled project memory for ${input.state.bundle.project.name}.`
+      ? `Recalled project memory for ${input.state.bundle.project.name}: ${summarizeRecallDiff(input.diffSummary)}`
       : `${input.commandName} refreshed canonical memory for ${input.state.bundle.project.name}.`;
 
   return {

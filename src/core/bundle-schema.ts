@@ -220,6 +220,9 @@ export function validateHistorySourceShape(value: unknown): string[] {
   expectString(record.createdAt, "source.createdAt", errors);
   expectString(record.updatedAt, "source.updatedAt", errors);
   expectNullableString(record.lastSyncedAt, "source.lastSyncedAt", errors);
+  expectEnum(record.lastSyncStatus, ["never", "passed", "failed"] as const, "source.lastSyncStatus", errors);
+  expectNullableString(record.lastSyncError, "source.lastSyncError", errors);
+  expectNumber(record.lastImportedCount, "source.lastImportedCount", errors);
   return errors;
 }
 

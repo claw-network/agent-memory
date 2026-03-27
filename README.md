@@ -89,6 +89,8 @@ npx agent-memory recall
 
 Reads unrecalled history, proposes a consolidated bundle, shows summary changes and file diffs, and applies only after confirmation.
 
+If no unrecalled events produced durable changes, `recall` exits with a clear no-op message and does not write a checkpoint or tool-run event.
+
 ### Query memory
 
 ```bash
@@ -106,6 +108,12 @@ npx agent-memory import sync --all
 
 Registers external history sources and normalizes imported sessions into durable history events.
 
+`import sync` may partially succeed:
+
+- imported sessions become history events
+- duplicate sessions are skipped
+- broken session files are reported as failures without aborting the whole source
+
 ### Audit health
 
 ```bash
@@ -113,6 +121,19 @@ npx agent-memory validate
 ```
 
 Audits state integrity, history continuity, checkpoint presence, projection alignment, entry wiring, and recall backlog health.
+
+## Troubleshooting
+
+Common cases:
+
+- `import sync` reports `failed=...`
+  The source is still registered, but one or more session files could not be parsed or normalized. Run `agent-memory validate` to see whether this is now a warning condition.
+- `recall` says `Nothing to recall`
+  Either there are no unrecalled events for the selected scope, or consolidation produced no durable bundle changes.
+- `query` says there is not enough evidence
+  The current bundle, history, and checkpoints do not support a confident answer yet. Import more history or run `recall` before asking again.
+- `validate` warns about recall backlog
+  New history has accumulated and should be consolidated with `agent-memory recall`.
 
 ## Breaking Change
 

@@ -51,6 +51,7 @@ Run `recall` when:
 - next steps feel stale
 - gotchas are repetitive
 - `validate` warns about recall backlog
+- `import sync` completed but reported partial failures and you want to consolidate what was still imported
 
 ## When To Use `query`
 
@@ -59,6 +60,7 @@ Run `query` when:
 - you want a quick answer with citations
 - the information may live in history rather than just the current bundle
 - you want to inspect memory before deciding whether to run `recall`
+- you want to sanity-check whether memory has enough evidence before relying on it
 
 ## Runtime Control
 

@@ -1,0 +1,3 @@
+{"type":"user","timestamp":"2026-03-21T10:00:00.000Z","content":"GOTCHA: Retry worker needs cache flush\nVALIDATION: queue test is noisy"}
+{"type":"tool_use","timestamp":"2026-03-21T10:00:02.000Z","tool_name":"Read","tool_input":{"path":"src/worker.ts"}}
+{"type":"tool_result","timestamp":"2026-03-21T10:00:03.000Z","tool_name":"Read","tool_output":{"text":"PATH: src/worker.ts"}}

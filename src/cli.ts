@@ -215,8 +215,11 @@ async function main(): Promise<void> {
           continue;
         }
 
-        questionParts.push(value, ...remaining);
-        break;
+        if (value.startsWith("--")) {
+          throw new Error(`Unknown argument: ${value}`);
+        }
+
+        questionParts.push(value);
       }
 
       const question = questionParts.join(" ").trim();

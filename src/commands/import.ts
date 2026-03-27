@@ -30,7 +30,12 @@ export async function runImportList(cwd: string): Promise<number> {
   }
 
   for (const source of sources) {
-    console.log(`- ${source.id} (${source.type}) path=${source.path} lastSyncedAt=${source.lastSyncedAt ?? "never"}`);
+    console.log(
+      `- ${source.id} (${source.type}) path=${source.path} lastSyncedAt=${source.lastSyncedAt ?? "never"} status=${source.lastSyncStatus} imported=${source.lastImportedCount}`,
+    );
+    if (source.lastSyncError) {
+      console.log(`  lastSyncError: ${source.lastSyncError}`);
+    }
   }
 
   return 0;
@@ -52,7 +57,12 @@ export async function runImportSync(options: ImportSyncOptions): Promise<number>
   });
 
   for (const result of results) {
-    console.log(`- ${result.sourceId}: imported=${result.importedCount} skipped=${result.skippedCount}`);
+    console.log(
+      `- ${result.sourceId}: imported=${result.importedCount} skipped=${result.skippedCount} failed=${result.failedCount}`,
+    );
+    for (const failure of result.failures) {
+      console.log(`  failed ${failure.sourceRef}: ${failure.message}`);
+    }
   }
 
   return 0;

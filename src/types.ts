@@ -10,6 +10,7 @@ export type HistoryEventKind = "tool_run" | "imported_session";
 export type RecallSourceScope = "all" | "local" | "imports";
 export type QueryScope = "state" | "history" | "all";
 export type CitationSourceType = "bundle" | "event" | "checkpoint";
+export type SourceSyncStatus = "never" | "passed" | "failed";
 
 export interface WorkspaceModule {
   name: string;
@@ -265,6 +266,9 @@ export interface HistorySource {
   createdAt: string;
   updatedAt: string;
   lastSyncedAt: string | null;
+  lastSyncStatus: SourceSyncStatus;
+  lastSyncError: string | null;
+  lastImportedCount: number;
 }
 
 export interface CheckpointState {
@@ -282,6 +286,7 @@ export interface ImporterDiscoveredItem {
   sourceRef: string;
   contentHash: string;
   payload: string;
+  failureMessage?: string;
 }
 
 export interface Importer {
@@ -289,10 +294,17 @@ export interface Importer {
   discover(source: HistorySource): Promise<ImporterDiscoveredItem[]>;
 }
 
+export interface ImporterItemFailure {
+  sourceRef: string;
+  message: string;
+}
+
 export interface ImporterSyncResult {
   sourceId: string;
   importedCount: number;
   skippedCount: number;
+  failedCount: number;
+  failures: ImporterItemFailure[];
 }
 
 export interface FileDiff {
@@ -314,6 +326,7 @@ export interface RecallCandidate {
   state: AgentMemoryState;
   summary: RecallDiffSummary;
   fileDiffs: FileDiff[];
+  noopReason: string | null;
 }
 
 export interface Citation {
@@ -335,6 +348,7 @@ export interface QueryShortlistItem {
   pathOrSection: string;
   summary: string;
   content: string;
+  createdAt: string | null;
 }
 
 export interface AuditFinding {

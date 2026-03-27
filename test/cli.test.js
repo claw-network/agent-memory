@@ -7,6 +7,7 @@ const { spawn } = require("node:child_process");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const CLI_PATH = path.join(REPO_ROOT, "dist", "cli.js");
+const FIXTURES_DIR = path.join(__dirname, "fixtures");
 
 async function writeExecutable(filePath, content) {
   await fs.writeFile(filePath, content, "utf8");
@@ -432,6 +433,10 @@ async function runCli(projectDir, args, extraEnv = {}) {
   });
 }
 
+function fixturePath(...parts) {
+  return path.join(FIXTURES_DIR, ...parts);
+}
+
 async function readState(projectDir) {
   return JSON.parse(await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8"));
 }
@@ -622,6 +627,82 @@ test("import add/list/sync registers sources and deduplicates imported sessions"
   assert.equal(state.maintenance.historyEventCount, 2);
 });
 
+test("import sync handles real fixture snapshots for Claude and Codex local history", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal(
+    (await runCli(projectDir, ["import", "add", "claude-local", fixturePath("claude-local"), "--name", "claude-real"], providerEnv(providers))).code,
+    0,
+  );
+  assert.equal(
+    (await runCli(projectDir, ["import", "add", "codex-local", fixturePath("codex-local"), "--name", "codex-real"], providerEnv(providers))).code,
+    0,
+  );
+
+  const result = await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /claude-real: imported=3 skipped=0 failed=0/);
+  assert.match(result.stdout, /codex-real: imported=3 skipped=0 failed=0/);
+
+  const sources = await readSources(projectDir);
+  assert.ok(sources.every((source) => source.lastSyncStatus === "passed"));
+  assert.equal((await readEvents(projectDir)).length, 7);
+});
+
+test("import sync reports partial failures without aborting the whole source", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal(
+    (await runCli(projectDir, ["import", "add", "claude-local", fixturePath("claude-local-mixed"), "--name", "claude-mixed"], providerEnv(providers))).code,
+    0,
+  );
+
+  const result = await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /claude-mixed: imported=1 skipped=0 failed=1/);
+  assert.match(result.stdout, /failed .*bad\.jsonl: Invalid JSONL transcript/);
+
+  const sources = await readSources(projectDir);
+  const mixedSource = sources.find((source) => source.id === "claude-mixed");
+  assert.ok(mixedSource);
+  assert.equal(mixedSource.lastSyncStatus, "failed");
+  assert.match(mixedSource.lastSyncError, /Invalid JSONL transcript/);
+  assert.equal(mixedSource.lastImportedCount, 1);
+});
+
+test("recall prints a no-op message when nothing new needs consolidation", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "DECISION: Use cache layer\nGOTCHA: Reset local cache before query\nNEXT: Write cache playbook\nDONE: Review the generated state\nPATH: src/cache.ts\nVALIDATION: cache validation is flaky",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["recall", "--yes", "--provider=codex", "--source=imports"], providerEnv(providers))).code, 0);
+
+  const stateBefore = await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8");
+  const eventsBefore = await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8");
+  const checkpointsBefore = await checkpointFiles(projectDir);
+
+  const result = await runCli(projectDir, ["recall", "--provider=codex", "--source=imports"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Nothing to recall/);
+  assert.equal(await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8"), stateBefore);
+  assert.equal(await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8"), eventsBefore);
+  assert.deepEqual(await checkpointFiles(projectDir), checkpointsBefore);
+});
+
 test("validate passes on a healthy initialized project with validation baseline", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
@@ -649,6 +730,46 @@ test("validate fails on damaged history and source registry", async () => {
   result = await runCli(projectDir, ["validate"], providerEnv(providers));
   assert.equal(result.code, 1);
   assert.match(result.stdout, /sources:read/);
+});
+
+test("validate warns when the last import sync failed but state is still usable", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal(
+    (await runCli(projectDir, ["import", "add", "claude-local", fixturePath("claude-local-mixed"), "--name", "claude-mixed"], providerEnv(providers))).code,
+    0,
+  );
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const result = await runCli(projectDir, ["validate"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /WARN sources:sync:claude-mixed/);
+});
+
+test("query returns evidence-insufficient when memory does not support the question", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const result = await runCli(projectDir, ["query", "quantum entanglement history", "--provider=codex", "--scope=all"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /does not contain enough evidence/i);
+});
+
+test("query citations use stable section and checkpoint identifiers", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const result = await runCli(projectDir, ["query", "current focus", "--provider=codex", "--scope=all"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /bundle\.currentFocus|bundle\.project|checkpoint:chk-/);
 });
 
 test("validate fails when the latest checkpoint is missing", async () => {

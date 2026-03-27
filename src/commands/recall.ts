@@ -2,16 +2,36 @@ import { applyRecall, prepareRecall } from "../core/recall-orchestrator";
 import { confirm, formatPlan } from "../core/command-helpers";
 import type { RecallOptions } from "../types";
 
+const MAX_DIFF_LINES = 80;
+
+function renderDiffPreview(diff: string): { text: string; truncated: boolean } {
+  const lines = diff.split("\n");
+  if (lines.length <= MAX_DIFF_LINES) {
+    return { text: diff, truncated: false };
+  }
+
+  return {
+    text: `${lines.slice(0, MAX_DIFF_LINES).join("\n")}\n... diff truncated, inspect the target files for the full change ...`,
+    truncated: true,
+  };
+}
+
 export async function runRecall(options: RecallOptions): Promise<number> {
   const prepared = await prepareRecall(options);
 
   console.log(`Recall source scope: ${options.source}`);
   console.log(`Unrecalled events considered: ${prepared.unrecalledCount}`);
+  if (prepared.candidate.noopReason) {
+    console.log("");
+    console.log("Nothing to recall.");
+    console.log(prepared.candidate.noopReason);
+    return 0;
+  }
   console.log("");
   console.log("Planned changes:");
   console.log(formatPlan(prepared.plannedChanges));
   console.log("");
-  console.log("Recall summary:");
+  console.log("Memory Summary:");
   console.log(`- Changed sections: ${prepared.candidate.summary.changedSections.join(", ") || "none"}`);
   console.log(`- Added gotchas: ${prepared.candidate.summary.addedGotchas.join(", ") || "none"}`);
   console.log(`- Removed gotchas: ${prepared.candidate.summary.removedGotchas.join(", ") || "none"}`);
@@ -27,7 +47,8 @@ export async function runRecall(options: RecallOptions): Promise<number> {
     console.log("");
     console.log("File diffs:");
     for (const fileDiff of prepared.candidate.fileDiffs) {
-      console.log(fileDiff.diff);
+      const preview = renderDiffPreview(fileDiff.diff);
+      console.log(preview.text);
       console.log("");
     }
   }

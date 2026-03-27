@@ -94,6 +94,8 @@ What it does:
 - prints summary changes and file diffs
 - applies only after confirmation, unless `--yes` is passed
 
+If there are no unrecalled events, or if consolidation produces no durable changes, `recall` exits without writing state, checkpoints, or tool-run events.
+
 Optional source filter:
 
 ```bash
@@ -148,6 +150,13 @@ Current built-in source types:
 
 `import sync` normalizes external sessions into standard history events. It does not directly rewrite the active bundle; use `recall` for that.
 
+`import sync` is resilient to partial failures:
+
+- valid sessions are imported
+- duplicates are skipped
+- malformed sessions are reported as failed items
+- the source keeps a sync status that `validate` can later inspect
+
 ## `agent-memory validate`
 
 ```bash
@@ -167,6 +176,11 @@ It checks:
 - referenced path existence
 - validation baseline freshness
 - recall backlog health
+
+Important interpretation:
+
+- `fail` means the canonical system is structurally unhealthy
+- `warn` means the system is still usable, but maintenance is recommended
 
 ## Mental Model
 

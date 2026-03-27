@@ -136,24 +136,36 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
   const cursor = currentState.maintenance.recallCursors[options.source];
   const unrecalledEvents = filterEventsBySource(eventsAfterCursor(events, cursor.lastRecalledEventId), options.source);
 
-  let candidateBundle = currentState.bundle;
-  if (unrecalledEvents.length > 0) {
-    const result = await invokeProvider(options.provider, {
-      cwd: options.cwd,
-      prompt: buildRecallPrompt(context, currentState, checkpoint, unrecalledEvents, options.source),
-      schema: bundleOutputSchema,
-    });
-    const errors = validateBundleShape(result.parsed);
-    if (errors.length > 0) {
-      throw new Error(`Recall returned an invalid memory bundle: ${errors.join(" ")}`);
-    }
-
-    const parsed = asAgentMemoryBundle(result.parsed);
-    if (!parsed) {
-      throw new Error("Recall did not return a valid memory bundle.");
-    }
-    candidateBundle = parsed;
+  if (unrecalledEvents.length === 0) {
+    return {
+      currentState,
+      candidate: {
+        state: currentState,
+        summary: buildRecallSummary(currentState.bundle, currentState.bundle),
+        fileDiffs: [],
+        noopReason: "No unrecalled events matched the selected source scope.",
+      },
+      plannedChanges: [],
+      unrecalledCount: 0,
+    };
   }
+
+  let candidateBundle = currentState.bundle;
+  const result = await invokeProvider(options.provider, {
+    cwd: options.cwd,
+    prompt: buildRecallPrompt(context, currentState, checkpoint, unrecalledEvents, options.source),
+    schema: bundleOutputSchema,
+  });
+  const errors = validateBundleShape(result.parsed);
+  if (errors.length > 0) {
+    throw new Error(`Recall returned an invalid memory bundle: ${errors.join(" ")}`);
+  }
+
+  const parsed = asAgentMemoryBundle(result.parsed);
+  if (!parsed) {
+    throw new Error("Recall did not return a valid memory bundle.");
+  }
+  candidateBundle = parsed;
 
   const now = new Date().toISOString();
   const reservedCheckpointId = await nextCheckpointId(options.cwd);
@@ -171,6 +183,22 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
 
   const nextState = buildState(candidateBundle, currentState.provider, updatedMaintenance, now);
   const summary = buildRecallSummary(currentState.bundle, candidateBundle);
+  const isNoop =
+    stableStringify(currentState.bundle) === stableStringify(candidateBundle) &&
+    summary.changedSections.length === 0;
+  if (isNoop) {
+    return {
+      currentState,
+      candidate: {
+        state: currentState,
+        summary,
+        fileDiffs: [],
+        noopReason: "Recall found no durable memory changes after consolidation.",
+      },
+      plannedChanges: [],
+      unrecalledCount: unrecalledEvents.length,
+    };
+  }
   const fileDiffs = await buildFileDiffs(options.cwd, nextState);
   const plannedChanges = await planProjectionWrites(projectState(options.cwd, nextState), getStatePath(options.cwd));
 
@@ -180,6 +208,7 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
       state: nextState,
       summary,
       fileDiffs,
+      noopReason: null,
     },
     plannedChanges,
     unrecalledCount: unrecalledEvents.length,
@@ -187,6 +216,10 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
 }
 
 export async function applyRecall(rootDir: string, candidate: RecallCandidate): Promise<void> {
+  if (candidate.noopReason) {
+    return;
+  }
+
   await persistCanonicalState({
     rootDir,
     bundle: candidate.state.bundle,
@@ -195,5 +228,6 @@ export async function applyRecall(rootDir: string, candidate: RecallCandidate): 
     generatedAt: candidate.state.generatedAt,
     maintenance: candidate.state.maintenance,
     diffSummary: candidate.summary,
+    reservedCheckpointId: candidate.state.maintenance.latestCheckpointId,
   });
 }

@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-03-20T10:00:00.000Z","content":"DECISION: Use background queue\nPATH: src/queue.ts"}
+{"type":"assistant","timestamp":"2026-03-20T10:00:05.000Z","content":"NEXT: Document queue retry behavior"}
