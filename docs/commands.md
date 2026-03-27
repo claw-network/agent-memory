@@ -114,10 +114,6 @@ npx agent-memory recall --show-diff
 npx agent-memory recall --checkpoint chk-000001
 ```
 
-For the full behavioral contract, see [Phase 2 Recall Rules](./phase2-recall-rules.md).
-
-For the conservative merge semantics used during recall, see [Phase 2 Dedupe Rules](./phase2-dedupe-rules.md).
-
 ## `agent-memory query`
 
 ```bash
@@ -194,8 +190,6 @@ Optional flags:
 ```bash
 npx agent-memory status --checkpoint chk-000001 --show-diff
 ```
-
-For the full suggested-action and checkpoint-drift contract, see [Phase 2 Status Rules](./phase2-status-rules.md).
 
 ## `agent-memory validate`
 

@@ -120,7 +120,7 @@ Future work should now treat Phase 1 as the stabilization baseline and move incr
 
 ## Phase 2 Status
 
-Phase 2 is now established in the implementation baseline:
+Phase 2 is complete:
 
 - recall supports section-aware consolidation across the full bundle
 - conservative deduplication is applied before state write
@@ -128,12 +128,4 @@ Phase 2 is now established in the implementation baseline:
 - `status` provides backlog, source health, checkpoint drift, and suggested next action
 - `config.json` provides project-level recall defaults and policy controls
 
-Future work should now treat Phase 2 as the maintenance baseline and move incrementally into Phase 3.
-
-The formal recall behavior contract now lives in [Phase 2 Recall Rules](./phase2-recall-rules.md).
-
-The formal conservative dedupe contract now lives in [Phase 2 Dedupe Rules](./phase2-dedupe-rules.md).
-
-The formal status suggestion contract now lives in [Phase 2 Status Rules](./phase2-status-rules.md).
-
-Phase 2 should be considered complete only when the checklist in [Phase 2 Exit Criteria](./phase2-exit-criteria.md) is satisfied.
+Future work should now treat Phase 2 as complete and move into Phase 3.
