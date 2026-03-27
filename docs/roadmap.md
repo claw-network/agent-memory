@@ -133,3 +133,5 @@ Future work should now treat Phase 2 as the maintenance baseline and move increm
 The formal recall behavior contract now lives in [Phase 2 Recall Rules](./phase2-recall-rules.md).
 
 The formal conservative dedupe contract now lives in [Phase 2 Dedupe Rules](./phase2-dedupe-rules.md).
+
+The formal status suggestion contract now lives in [Phase 2 Status Rules](./phase2-status-rules.md).

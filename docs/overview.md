@@ -84,5 +84,6 @@ to rebuild into the current system.
 - [File Model](./file-model.md)
 - [Phase 2 Recall Rules](./phase2-recall-rules.md)
 - [Phase 2 Dedupe Rules](./phase2-dedupe-rules.md)
+- [Phase 2 Status Rules](./phase2-status-rules.md)
 - [V1 Boundary And Roadmap](./roadmap.md)
 - [Adoption Guide](./adoption.md)

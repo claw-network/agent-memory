@@ -195,6 +195,8 @@ Optional flags:
 npx agent-memory status --checkpoint chk-000001 --show-diff
 ```
 
+For the full suggested-action and checkpoint-drift contract, see [Phase 2 Status Rules](./phase2-status-rules.md).
+
 ## `agent-memory validate`
 
 ```bash

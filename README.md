@@ -182,6 +182,7 @@ This is a destructive model change.
 - [File Model](./docs/file-model.md)
 - [Phase 2 Recall Rules](./docs/phase2-recall-rules.md)
 - [Phase 2 Dedupe Rules](./docs/phase2-dedupe-rules.md)
+- [Phase 2 Status Rules](./docs/phase2-status-rules.md)
 - [V1 Boundary And Roadmap](./docs/roadmap.md)
 - [Adoption Guide](./docs/adoption.md)
 - [Contributing](./CONTRIBUTING.md)
