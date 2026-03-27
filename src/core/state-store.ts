@@ -3,7 +3,12 @@ import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { GENERATOR_VERSION, STATE_SCHEMA_VERSION } from "./constants";
 import { validateStateShape } from "./bundle-schema";
-import type { AgentMemoryBundle, AgentMemoryState, ProviderMetadata } from "../types";
+import type {
+  AgentMemoryBundle,
+  AgentMemoryState,
+  MaintenanceMetadata,
+  ProviderMetadata,
+} from "../types";
 
 export function getStateDir(rootDir: string): string {
   return join(rootDir, ".agent-memory");
@@ -42,13 +47,33 @@ export function stableStringify(value: unknown): string {
   return JSON.stringify(sortValue(value), null, 2);
 }
 
+export function computeContentHash(value: unknown): string {
+  return createHash("sha256").update(stableStringify(value)).digest("hex");
+}
+
 export function computeBundleHash(bundle: AgentMemoryBundle): string {
-  return createHash("sha256").update(stableStringify(bundle)).digest("hex");
+  return computeContentHash(bundle);
+}
+
+export function createEmptyMaintenance(): MaintenanceMetadata {
+  return {
+    lastRecalledAt: null,
+    lastRecalledEventId: null,
+    latestCheckpointId: null,
+    historyEventCount: 0,
+    importSourceCount: 0,
+    recallCursors: {
+      all: { lastRecalledAt: null, lastRecalledEventId: null },
+      local: { lastRecalledAt: null, lastRecalledEventId: null },
+      imports: { lastRecalledAt: null, lastRecalledEventId: null },
+    },
+  };
 }
 
 export function buildState(
   bundle: AgentMemoryBundle,
   provider: ProviderMetadata,
+  maintenance: MaintenanceMetadata,
   generatedAt = new Date().toISOString(),
 ): AgentMemoryState {
   return {
@@ -58,6 +83,7 @@ export function buildState(
     generatedAt,
     bundleHash: computeBundleHash(bundle),
     bundle,
+    maintenance,
   };
 }
 

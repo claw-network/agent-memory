@@ -1,79 +1,77 @@
 # Overview
 
-`agent-memory` is a repository-level memory layer for developers and coding agents, but its source of truth is no longer a set of hand-managed markdown files.
+`agent-memory` is a repository memory system for developers and coding agents.
 
-The new model is:
+The current model is no longer just “generate some markdown.” It has three active jobs:
 
-- repository context is gathered into one analysis pass
-- that analysis produces a structured memory bundle
-- `agent-memory` stores that bundle in `/.agent-memory/state.json`
-- readable markdown files in `docs/agent-memory/` are projected from that canonical state
-
-## Why This Shift Matters
-
-The old static-template approach was cheap, but too shallow for real projects. It could identify manifests and source folders, yet it could not reliably explain:
-
-- what modules are actually for
-- which entrypoints matter most
-- what the current operating picture is
-- which gotchas are truly expensive
-- what the next contributor should do first
-
-The new architecture keeps local determinism where it matters, but moves the hard part into bundle synthesis: turning repository evidence into trustworthy project memory.
+- capture durable memory state
+- maintain that memory through history and recall
+- retrieve that memory through query
 
 ## The Model
 
-The system now has two layers:
+The system has four persistent pieces:
 
-### Canonical layer
+- `state.json`
+  The current canonical bundle
+- `history/events.jsonl`
+  Append-only memory inputs from tool runs and imported sessions
+- `history/checkpoints/`
+  Snapshots of canonical bundles after meaningful writes
+- `sources.json`
+  The registry of external history inputs
 
-- `/.agent-memory/state.json`
+`docs/agent-memory/*.md` remains the readable projection layer, but it is no longer the source of truth.
 
-This is the machine-readable source of truth. It contains:
+## Why This Matters
 
-- schema and generator version
-- execution metadata
-- generation timestamp
-- `bundleHash`
-- the full structured bundle
+The first version of `agent-memory` solved initialization. It did not solve long-term memory maintenance.
 
-### Projection layer
+Over time, real projects need more than one good snapshot. They need a loop:
 
-- `docs/agent-memory/README.md`
-- `docs/agent-memory/project-map.md`
-- `docs/agent-memory/current-focus.md`
-- `docs/agent-memory/gotchas.md`
-- `docs/agent-memory/next-steps.md`
+1. capture new signals
+2. keep history
+3. consolidate what matters
+4. retrieve it later
+5. audit drift and backlog
 
-These are generated projections of the canonical state. They are optimized for quick reading and reuse, while `validate` can still audit them through versioned hash markers.
+That is the purpose of the current architecture.
 
 ## Command Semantics
 
-- `init` creates or replaces canonical state
-- `update` refreshes canonical state from existing state plus fresh repo context
-- `validate` audits canonical state and projection alignment
-
-This means the repo always has one authoritative bundle, not several partially managed files pretending to be authoritative.
+- `init`
+  Destructive bootstrap into the current schema
+- `update`
+  Refresh the active bundle from current repository evidence
+- `recall`
+  Consolidate unrecalled history into the active bundle
+- `query`
+  Answer a question from bundle, history, and checkpoints
+- `import`
+  Bring external sessions into the history layer
+- `validate`
+  Audit the whole system, not just the current bundle
 
 ## Design Principles
 
 - canonical state first
-- projections are disposable and reproducible
-- repository-grounded analysis over static guessing
-- hash-based validation over marker ownership heuristics
-- short, durable outputs over sprawling generated prose
+- append-only history
+- readable projections
+- deliberate consolidation instead of silent drift
+- retrieval with citations, not opaque answers
+- explicit breaking changes over partial compatibility hacks
 
 ## Compatibility
 
-This model is intentionally breaking.
+This schema is intentionally breaking.
 
-Legacy repositories using the previous managed-marker approach should rerun:
+Old repositories should not be migrated in place. Re-run:
 
 ```bash
 npx agent-memory init
 ```
 
-to enter the canonical-state system.
+to rebuild into the current system.
 
 ## Related Pages
 

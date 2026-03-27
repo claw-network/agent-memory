@@ -1,5 +1,15 @@
 import { stableStringify } from "./state-store";
-import type { CollectedContext, ValidationResult } from "../types";
+import type {
+  AgentMemoryState,
+  CheckpointState,
+  CollectedContext,
+  HistorySource,
+  ImporterDiscoveredItem,
+  QueryScope,
+  QueryShortlistItem,
+  RecallSourceScope,
+  ValidationResult,
+} from "../types";
 
 function buildContextPayload(context: CollectedContext): Record<string, unknown> {
   return {
@@ -56,5 +66,83 @@ export function buildFinalizePrompt(
     "BEGIN_VALIDATION_RESULTS_JSON",
     stableStringify(validationResults),
     "END_VALIDATION_RESULTS_JSON",
+  ].join("\n");
+}
+
+export function buildRecallPrompt(
+  context: CollectedContext,
+  currentState: AgentMemoryState,
+  checkpoint: CheckpointState | null,
+  unrecalledEvents: unknown[],
+  sourceScope: RecallSourceScope,
+): string {
+  return [
+    "You are consolidating durable project memory for a software repository.",
+    "Do not edit files. Return exactly one JSON object matching the provided bundle schema and nothing else.",
+    "Your job is to consolidate the current bundle with new history signals.",
+    "You must merge duplicate gotchas, drop outdated or completed next steps, compress repetitive current-focus noise, and keep the project map stable unless the evidence strongly requires a change.",
+    "Preserve the repository's core structural understanding. Avoid gratuitous rewrites.",
+    "",
+    "BEGIN_CONTEXT_JSON",
+    stableStringify(buildContextPayload(context)),
+    "END_CONTEXT_JSON",
+    "",
+    "BEGIN_CURRENT_STATE_JSON",
+    stableStringify(currentState),
+    "END_CURRENT_STATE_JSON",
+    "",
+    "BEGIN_BASE_CHECKPOINT_JSON",
+    stableStringify(checkpoint),
+    "END_BASE_CHECKPOINT_JSON",
+    "",
+    "BEGIN_UNRECALLED_EVENTS_JSON",
+    stableStringify(unrecalledEvents),
+    "END_UNRECALLED_EVENTS_JSON",
+    "",
+    "BEGIN_RECALL_SCOPE",
+    sourceScope,
+    "END_RECALL_SCOPE",
+  ].join("\n");
+}
+
+export function buildQueryPrompt(
+  question: string,
+  scope: QueryScope,
+  shortlist: QueryShortlistItem[],
+): string {
+  return [
+    "You are answering a question from project memory.",
+    "Use only the supplied shortlist evidence. Do not invent unsupported facts.",
+    "Return exactly one JSON object matching the provided query-result schema and nothing else.",
+    "Keep the answer concise and include only citations that support the answer.",
+    "",
+    "BEGIN_QUERY_SCOPE",
+    scope,
+    "END_QUERY_SCOPE",
+    "",
+    "BEGIN_QUERY_QUESTION",
+    question,
+    "END_QUERY_QUESTION",
+    "",
+    "BEGIN_QUERY_SHORTLIST_JSON",
+    stableStringify(shortlist),
+    "END_QUERY_SHORTLIST_JSON",
+  ].join("\n");
+}
+
+export function buildImportNormalizationPrompt(source: HistorySource, item: ImporterDiscoveredItem): string {
+  return [
+    "You are normalizing an external coding-agent session into a durable history event for project memory.",
+    "Return exactly one JSON object matching the provided schema and nothing else.",
+    "Focus on durable signals only: decisions, gotchas, next-step hints, key paths, and validation observations.",
+    "Do not restate the whole session. Summarize only what is likely to matter across future sessions.",
+    "",
+    "BEGIN_IMPORT_SOURCE_JSON",
+    stableStringify(source),
+    "END_IMPORT_SOURCE_JSON",
+    "",
+    "BEGIN_IMPORT_ITEM_JSON",
+    stableStringify(item),
+    "END_IMPORT_ITEM_JSON",
   ].join("\n");
 }

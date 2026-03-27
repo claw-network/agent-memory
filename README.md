@@ -4,53 +4,41 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![node >=18](https://img.shields.io/badge/node-%3E%3D18-417e38)](./package.json)
 
-Canonical project memory for developers and coding agents.
+Durable project memory with history, recall, and query.
 
-`agent-memory` builds repository memory in two layers:
+`agent-memory` is now a full memory system for repositories:
 
-- it generates a canonical memory bundle in `/.agent-memory/state.json`
-- it projects that bundle into `docs/agent-memory/` as readable repository docs
+- it stores the current canonical memory in `/.agent-memory/state.json`
+- it records durable history in `/.agent-memory/history/`
+- it projects the current memory into `docs/agent-memory/`
+- it lets you consolidate memory with `recall`
+- it lets you retrieve memory with `query`
 
 ## Why This Exists
 
-Most repositories still lose high-value engineering context:
+Repositories keep losing the same expensive context:
 
-- architecture is scattered across manifests, folders, and partial docs
-- current state lives in chats, PRs, and short-lived notes
-- costly gotchas are rediscovered repeatedly
-- coding agents work best when a repo exposes stable, low-noise context
+- architectural boundaries live across code, manifests, and half-finished docs
+- current state gets trapped in chats and PR threads
+- repeated gotchas are rediscovered instead of remembered
+- long-lived projects need both memory maintenance and memory retrieval
 
-`agent-memory` turns that into a small canonical bundle that can be regenerated, audited, and projected back into repo-native docs.
-
-## How It Works
-
-`agent-memory` does not treat markdown files as the source of truth.
-
-Instead, it:
-
-1. collects repository context
-2. synthesizes a structured memory bundle
-3. stores that bundle in `/.agent-memory/state.json`
-4. rewrites `docs/agent-memory/*.md` as projections of that state
-5. writes an entry block into the preferred top-level entry file
-
-If you need to control which runtime executes the analysis pass, use `--provider=auto|codex|claude`.
-
-## Design Principles
-
-- canonical machine-readable state first
-- readable projections second
-- repository-grounded synthesis instead of static template guessing
-- versioned markers and hash-based validation
-- short, durable docs over sprawling internal wikis
+`agent-memory` turns that into a structured repository memory system instead of a pile of static notes.
 
 ## Core Model
 
-The canonical source of truth is:
+The system now has four persistent layers:
 
 - `/.agent-memory/state.json`
+  Current canonical memory bundle
+- `/.agent-memory/history/events.jsonl`
+  Append-only history of tool runs and imported sessions
+- `/.agent-memory/history/checkpoints/`
+  Bundle checkpoints written after `init`, `update`, and `recall`
+- `/.agent-memory/sources.json`
+  Registered external history sources
 
-Readable projections live in:
+Readable projections still live in:
 
 - `docs/agent-memory/README.md`
 - `docs/agent-memory/project-map.md`
@@ -58,75 +46,82 @@ Readable projections live in:
 - `docs/agent-memory/gotchas.md`
 - `docs/agent-memory/next-steps.md`
 
-An entry block is also written into the preferred top-level entry file, using this order:
+An entry block is also written into the preferred top-level entry file.
 
-1. `AGENTS.md`
-2. `CLAUDE.md`
-3. `README.md`
-4. fallback create `AGENTS.md`
+## How It Works
 
-## Installation
+`agent-memory` no longer treats markdown files as the source of truth.
 
-```bash
-npm install -D @agent-connect/memory
-```
+Instead, it:
 
-```bash
-pnpm add -D @agent-connect/memory
-```
+1. collects repository context
+2. builds or refreshes a canonical bundle
+3. appends durable history events and checkpoints
+4. projects the active bundle into repository docs
+5. lets you consolidate history back into memory with `recall`
+6. lets you ask memory questions with `query`
 
-Once installed, run the local CLI with `npx agent-memory ...`.
+If you need to control the runtime used for synthesis, use `--provider=auto|codex|claude`.
 
 ## Commands
 
-### Initialize canonical memory
+### Bootstrap memory
 
 ```bash
 npx agent-memory init
 ```
 
-This command:
+Creates a fresh canonical state, resets the history scaffold, writes the first checkpoint, and projects the bundle into docs.
 
-- collects fresh repository context
-- rebuilds the canonical memory bundle
-- creates or replaces `/.agent-memory/state.json`
-- rewrites `docs/agent-memory/*.md`
-- inserts or replaces the project memory entry block
-
-Run with validation:
-
-```bash
-npx agent-memory init --yes --validate
-```
-
-### Refresh canonical memory
+### Refresh current memory
 
 ```bash
 npx agent-memory update
 ```
 
-This command requires an existing `/.agent-memory/state.json`. It combines the previous canonical bundle with fresh repository context, then rewrites canonical state and projections.
+Refreshes the active canonical bundle from current repository evidence and writes a new checkpoint plus tool-run event.
 
-Run with validation:
+### Consolidate memory
 
 ```bash
-npx agent-memory update --yes --validate
+npx agent-memory recall
 ```
 
-### Audit memory health
+Reads unrecalled history, proposes a consolidated bundle, shows summary changes and file diffs, and applies only after confirmation.
+
+### Query memory
+
+```bash
+npx agent-memory query "how does caching work?"
+```
+
+Returns a short answer plus citations from bundle sections, history events, and checkpoints.
+
+### Import external sessions
+
+```bash
+npx agent-memory import add claude-local ~/.claude --name claude
+npx agent-memory import sync --all
+```
+
+Registers external history sources and normalizes imported sessions into durable history events.
+
+### Audit health
 
 ```bash
 npx agent-memory validate
 ```
 
-This audits:
+Audits state integrity, history continuity, checkpoint presence, projection alignment, entry wiring, and recall backlog health.
 
-- `/.agent-memory/state.json` existence and schema
-- state bundle hash integrity
-- projection markers and hash alignment
-- entry block presence and hash alignment
-- referenced bundle paths
-- validation baseline freshness
+## Breaking Change
+
+This is a destructive model change.
+
+- old `state.json` formats are not supported
+- old projection markers are not supported
+- there is no migration path
+- old repositories should rerun `npx agent-memory init`
 
 ## Learn More
 

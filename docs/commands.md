@@ -1,9 +1,12 @@
 # Commands
 
-`agent-memory` exposes three commands:
+`agent-memory` exposes six command surfaces:
 
 - `init`
 - `update`
+- `recall`
+- `query`
+- `import`
 - `validate`
 
 Install the package first:
@@ -20,17 +23,21 @@ pnpm add -D @agent-connect/memory
 
 Then run the local CLI with `npx agent-memory ...`.
 
-## Execution Notes
+## Runtime Control
 
-`init` and `update` both run a repository analysis pass and then rewrite the canonical state plus all projections.
-
-If you need to control the runtime used for that analysis pass, override it with:
+Commands that synthesize or normalize memory accept:
 
 ```bash
-npx agent-memory init --provider=codex
+--provider=auto|codex|claude
 ```
 
-If the selected runtime is unavailable, the command fails.
+This applies to:
+
+- `init`
+- `update`
+- `recall`
+- `query`
+- `import sync`
 
 ## `agent-memory init`
 
@@ -38,23 +45,21 @@ If the selected runtime is unavailable, the command fails.
 npx agent-memory init
 ```
 
-Use `init` when a repository does not yet have canonical memory state, or when you want to rebuild it into the new model.
+Use `init` to rebuild a repository into the current schema.
 
 What it does:
 
-- gathers repository context
-- builds a fresh canonical bundle
-- creates or replaces `/.agent-memory/state.json`
-- rewrites `docs/agent-memory/*.md`
-- inserts or replaces the project memory entry block
+- clears and rebuilds `/.agent-memory/`
+- writes a fresh canonical bundle
+- writes the first history event
+- writes the first checkpoint
+- rewrites projections and entry wiring
 
-Non-interactive run with validation:
+Optional validation:
 
 ```bash
 npx agent-memory init --yes --validate
 ```
-
-Use `--validate` when you want the analysis flow to recommend validation commands, run up to two of them, and fold the real results into the final bundle.
 
 ## `agent-memory update`
 
@@ -62,25 +67,86 @@ Use `--validate` when you want the analysis flow to recommend validation command
 npx agent-memory update
 ```
 
-Use `update` when canonical state already exists and the repo has changed.
+Use `update` to refresh the active canonical bundle from current repository evidence.
 
 What it does:
 
-- loads the previous canonical bundle from `/.agent-memory/state.json`
-- rescans the repository
-- rebuilds the bundle from both old state and fresh repo context
-- rewrites canonical state and all projections
+- reads the current canonical state
+- re-synthesizes the active bundle
+- writes a new tool-run event
+- writes a new checkpoint
+- rewrites projections and entry wiring
 
-Non-interactive run with validation:
+This command only supports the current schema. Old states must be replaced with `init`.
+
+## `agent-memory recall`
 
 ```bash
-npx agent-memory update --yes --validate
+npx agent-memory recall
 ```
 
-Important behavior:
+Use `recall` to consolidate unrecalled history into the active canonical bundle.
 
-- `update` does not support the legacy static/managed-marker model
-- if `/.agent-memory/state.json` is missing, `update` fails and tells you to run `init`
+What it does:
+
+- reads unrecalled history events
+- proposes a consolidated bundle
+- prints summary changes and file diffs
+- applies only after confirmation, unless `--yes` is passed
+
+Optional source filter:
+
+```bash
+npx agent-memory recall --source=imports
+```
+
+## `agent-memory query`
+
+```bash
+npx agent-memory query "how does caching work?"
+```
+
+Use `query` to retrieve an answer from the memory system.
+
+What it does:
+
+- builds a shortlist from bundle, history, and checkpoints
+- synthesizes a short answer
+- returns citations for each claim
+
+Optional scope:
+
+```bash
+npx agent-memory query "what changed recently?" --scope=history
+```
+
+## `agent-memory import`
+
+### Add a source
+
+```bash
+npx agent-memory import add claude-local ~/.claude --name claude
+```
+
+### Sync one source or all sources
+
+```bash
+npx agent-memory import sync claude
+npx agent-memory import sync --all
+```
+
+### List registered sources
+
+```bash
+npx agent-memory import list
+```
+
+Current built-in source types:
+
+- `claude-local`
+- `codex-local`
+
+`import sync` normalizes external sessions into standard history events. It does not directly rewrite the active bundle; use `recall` for that.
 
 ## `agent-memory validate`
 
@@ -92,22 +158,21 @@ This is a read-only audit.
 
 It checks:
 
-- `/.agent-memory/state.json` exists
-- state JSON matches the canonical schema
-- `bundleHash` matches the stored bundle
-- projected markdown files exist and carry the current hash marker
-- the entry block exists and carries the current hash marker
-- bundle-referenced paths still exist
-- the validation baseline is present and fresh
-
-It does not:
-
-- regenerate the bundle
-- rerun repository analysis
-- rewrite files
+- current `state.json` schema and bundle hash
+- history event readability and continuity
+- checkpoint presence and latest checkpoint consistency
+- source registry validity
+- projection marker alignment
+- entry block alignment
+- referenced path existence
+- validation baseline freshness
+- recall backlog health
 
 ## Mental Model
 
-- `init` = create canonical state
-- `update` = refresh canonical state
-- `validate` = audit canonical state and projections
+- `init` = bootstrap
+- `update` = refresh active memory
+- `recall` = consolidate history
+- `query` = retrieve memory
+- `import` = ingest external sessions
+- `validate` = audit the system

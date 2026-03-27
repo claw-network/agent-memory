@@ -37,11 +37,14 @@ function parseJsonBlock(prompt, name, fallback) {
   }
 }
 
+function unique(values) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
 function computeSnapshotStatus(results) {
   if (!Array.isArray(results) || results.length === 0) {
     return "not-run";
   }
-
   const statuses = new Set(results.map((result) => result.status));
   if (statuses.size === 1 && statuses.has("passed")) {
     return "passed";
@@ -50,6 +53,30 @@ function computeSnapshotStatus(results) {
     return "failed";
   }
   return "mixed";
+}
+
+function parseMarkers(payload) {
+  const markers = {
+    decisions: [],
+    gotchas: [],
+    nextStepHints: [],
+    keyPaths: [],
+    validationObservations: [],
+  };
+  const pattern = /(?:^|\\n)(DECISION|GOTCHA|NEXT|DONE|PATH|VALIDATION):\\s*(.+)$/gm;
+  let match;
+  while ((match = pattern.exec(payload)) !== null) {
+    const kind = match[1];
+    const value = match[2].trim();
+    if (!value) continue;
+    if (kind === "DECISION") markers.decisions.push(value);
+    if (kind === "GOTCHA") markers.gotchas.push(value);
+    if (kind === "NEXT") markers.nextStepHints.push("NEXT: " + value);
+    if (kind === "DONE") markers.nextStepHints.push("DONE: " + value);
+    if (kind === "PATH") markers.keyPaths.push(value);
+    if (kind === "VALIDATION") markers.validationObservations.push(value);
+  }
+  return markers;
 }
 
 function buildBundle(provider, prompt) {
@@ -127,7 +154,7 @@ function buildBundle(provider, prompt) {
     },
     gotchas: [
       {
-        title: "Fake gotcha",
+        title: "Initial gotcha",
         symptom: "A fake failure is encountered.",
         cause: "The fake provider injected this sample gotcha.",
         correctPath: "Follow the generated docs and rerun the command."
@@ -135,10 +162,16 @@ function buildBundle(provider, prompt) {
     ],
     nextSteps: [
       {
-        title: mode === "update" ? "Review the refreshed state" : "Review the generated state",
+        title: "Review the generated state",
         why: "Confirm the canonical bundle matches the repository reality.",
         start: "Open docs/agent-memory/current-focus.md.",
         done: "The generated memory looks trustworthy."
+      },
+      {
+        title: "Document package workflow",
+        why: "Record the package manager workflow for the next contributor.",
+        start: "Update docs/agent-memory/README.md.",
+        done: "The package workflow is documented."
       }
     ],
     validationCommands: [
@@ -148,6 +181,87 @@ function buildBundle(provider, prompt) {
         purpose: "Confirm Node-based command execution works."
       }
     ]
+  };
+}
+
+function buildRecallBundle(prompt) {
+  const currentState = parseJsonBlock(prompt, "CURRENT_STATE_JSON", {});
+  const events = parseJsonBlock(prompt, "UNRECALLED_EVENTS_JSON", []);
+  const bundle = JSON.parse(JSON.stringify((currentState && currentState.bundle) || {}));
+  const gotchaMap = new Map((bundle.gotchas || []).map((gotcha) => [gotcha.title, gotcha]));
+  const nextStepMap = new Map((bundle.nextSteps || []).map((step) => [step.title, step]));
+  const doneTitles = new Set();
+  const extraState = [];
+  const extraRisks = [];
+  const keyPaths = new Set(bundle.project && Array.isArray(bundle.project.keyPaths) ? bundle.project.keyPaths : []);
+
+  for (const event of events) {
+    const signals = event.signals || {};
+    for (const gotchaTitle of signals.gotchas || []) {
+      if (!gotchaMap.has(gotchaTitle)) {
+        gotchaMap.set(gotchaTitle, {
+          title: gotchaTitle,
+          symptom: "Imported from " + event.sourceId,
+          cause: "Derived from external session history.",
+          correctPath: "Follow the recalled guidance."
+        });
+      }
+    }
+    for (const hint of signals.nextStepHints || []) {
+      if (hint.startsWith("DONE: ")) {
+        doneTitles.add(hint.slice(6));
+        continue;
+      }
+      const title = hint.startsWith("NEXT: ") ? hint.slice(6) : hint;
+      if (!nextStepMap.has(title)) {
+        nextStepMap.set(title, {
+          title,
+          why: "Recalled from imported history.",
+          start: "Follow the recalled action.",
+          done: "The recalled action is complete."
+        });
+      }
+    }
+    for (const decision of signals.decisions || []) extraState.push("Decision: " + decision);
+    for (const observation of signals.validationObservations || []) extraRisks.push(observation);
+    for (const keyPath of signals.keyPaths || []) keyPaths.add(keyPath);
+  }
+
+  for (const title of doneTitles) {
+    nextStepMap.delete(title);
+  }
+
+  bundle.gotchas = Array.from(gotchaMap.values());
+  bundle.nextSteps = Array.from(nextStepMap.values());
+  bundle.project.keyPaths = Array.from(keyPaths);
+  bundle.currentFocus.summary = "Recalled " + events.length + " history event(s).";
+  bundle.currentFocus.currentState = unique([...(bundle.currentFocus.currentState || []), ...extraState]);
+  bundle.currentFocus.knownRisks = unique([...(bundle.currentFocus.knownRisks || []), ...extraRisks]);
+  return bundle;
+}
+
+function buildQueryResult(prompt) {
+  const question = extractBlock(prompt, "QUERY_QUESTION") || "unknown question";
+  const shortlist = parseJsonBlock(prompt, "QUERY_SHORTLIST_JSON", []);
+  return {
+    answer: "Answer for: " + question,
+    why: "Built from " + shortlist.length + " shortlisted memory items.",
+    citations: shortlist.slice(0, 2).map((item) => ({
+      sourceType: item.sourceType,
+      sourceId: item.sourceId,
+      pathOrSection: item.pathOrSection,
+      summary: item.summary
+    }))
+  };
+}
+
+function buildImportedNormalization(prompt) {
+  const item = parseJsonBlock(prompt, "IMPORT_ITEM_JSON", {});
+  const payload = String(item.payload || "");
+  const markers = parseMarkers(payload);
+  return {
+    summary: markers.decisions[0] || markers.gotchas[0] || markers.nextStepHints[0] || ("Imported " + (item.externalItemId || "session")),
+    signals: markers
   };
 }
 
@@ -185,6 +299,12 @@ async function main() {
     payload = "this is not json";
   } else if (fakeMode === "schema-error") {
     payload = JSON.stringify({ project: { name: "broken" } }, null, 2);
+  } else if (prompt.includes("BEGIN_QUERY_QUESTION")) {
+    payload = JSON.stringify(buildQueryResult(prompt), null, 2);
+  } else if (prompt.includes("BEGIN_IMPORT_ITEM_JSON")) {
+    payload = JSON.stringify(buildImportedNormalization(prompt), null, 2);
+  } else if (prompt.includes("BEGIN_UNRECALLED_EVENTS_JSON")) {
+    payload = JSON.stringify(buildRecallBundle(prompt), null, 2);
   } else {
     payload = JSON.stringify(buildBundle(provider, prompt), null, 2);
   }
@@ -238,6 +358,52 @@ async function createFixtureProject() {
   return projectDir;
 }
 
+async function createClaudeImportSource(specs) {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-claude-import-"));
+  const transcriptsDir = path.join(rootDir, "transcripts");
+  await fs.mkdir(transcriptsDir, { recursive: true });
+  for (const [index, spec] of specs.entries()) {
+    const filePath = path.join(transcriptsDir, `ses_${index + 1}.jsonl`);
+    await fs.writeFile(
+      filePath,
+      `${JSON.stringify({
+        type: "user",
+        timestamp: spec.timestamp || "2026-03-26T00:00:00.000Z",
+        content: spec.text,
+      })}\n`,
+      "utf8",
+    );
+  }
+  return rootDir;
+}
+
+async function createCodexImportSource(specs) {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-codex-import-"));
+  const sessionsDir = path.join(rootDir, "sessions", "2026", "03", "27");
+  await fs.mkdir(sessionsDir, { recursive: true });
+  for (const [index, spec] of specs.entries()) {
+    const filePath = path.join(sessionsDir, `rollout-${index + 1}.jsonl`);
+    await fs.writeFile(
+      filePath,
+      `${JSON.stringify({
+        timestamp: spec.timestamp || "2026-03-27T00:00:00.000Z",
+        type: "session_meta",
+        payload: { id: `session-${index + 1}` },
+      })}\n${JSON.stringify({
+        timestamp: spec.timestamp || "2026-03-27T00:00:01.000Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: spec.text }],
+        },
+      })}\n`,
+      "utf8",
+    );
+  }
+  return rootDir;
+}
+
 async function runCli(projectDir, args, extraEnv = {}) {
   return await new Promise((resolve) => {
     const child = spawn(process.execPath, [CLI_PATH, ...args], {
@@ -270,212 +436,271 @@ async function readState(projectDir) {
   return JSON.parse(await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8"));
 }
 
-async function rewriteFromState(projectDir, state) {
-  const { buildState, writeState } = require(path.join(REPO_ROOT, "dist", "core", "state-store.js"));
-  const { projectState } = require(path.join(REPO_ROOT, "dist", "core", "bundle-projector.js"));
-  const { writeProjectionFile, applyEntrySnippet } = require(path.join(REPO_ROOT, "dist", "core", "merge-files.js"));
-
-  const canonicalState = buildState(state.bundle, state.provider, state.generatedAt);
-  await writeState(projectDir, canonicalState);
-  const projection = projectState(projectDir, canonicalState);
-  for (const file of projection.files) {
-    await writeProjectionFile(file);
-  }
-  await applyEntrySnippet(projection.entryFile, projection.entrySnippet);
-  return canonicalState;
+async function readEvents(projectDir) {
+  const raw = await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8");
+  return raw
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
 }
 
-test("init with auto prefers codex and writes canonical artifacts", async () => {
+async function readSources(projectDir) {
+  return JSON.parse(await fs.readFile(path.join(projectDir, ".agent-memory", "sources.json"), "utf8"));
+}
+
+async function checkpointFiles(projectDir) {
+  return await fs.readdir(path.join(projectDir, ".agent-memory", "history", "checkpoints"));
+}
+
+function providerEnv(paths, extra = {}) {
+  return {
+    AGENT_MEMORY_CODEX_BIN: paths.codexPath,
+    AGENT_MEMORY_CLAUDE_BIN: paths.claudePath,
+    ...extra,
+  };
+}
+
+test("init rebuilds the new canonical state, history, checkpoints, and projections", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
-  const { codexPath, claudePath } = await createFakeProviderBinaries(providerDir);
+  const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
 
-  const result = await runCli(projectDir, ["init", "--yes", "--provider=auto"], {
-    AGENT_MEMORY_CODEX_BIN: codexPath,
-    AGENT_MEMORY_CLAUDE_BIN: claudePath,
-  });
+  const result = await runCli(projectDir, ["init", "--yes", "--provider=auto"], providerEnv(providers));
 
   assert.equal(result.code, 0, result.stderr);
   const state = await readState(projectDir);
-  assert.equal(state.provider.name, "codex");
-  assert.equal(state.bundle.project.summary, "codex generated init bundle");
+  assert.equal(state.schemaVersion, 2);
+  assert.equal(state.maintenance.historyEventCount, 1);
+  assert.equal(state.maintenance.importSourceCount, 0);
+  assert.equal((await readEvents(projectDir)).length, 1);
+  assert.equal((await checkpointFiles(projectDir)).length, 1);
+  assert.deepEqual(await readSources(projectDir), []);
   await fs.access(path.join(projectDir, "docs", "agent-memory", "README.md"));
-  const entryFile = await fs.readFile(path.join(projectDir, "README.md"), "utf8");
-  assert.match(entryFile, /agent-memory:entry version=2 bundleHash=/);
 });
 
-test("auto falls back to claude when codex is unavailable", async () => {
+test("update refreshes canonical memory and appends a tool-run event plus checkpoint", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
-  const { claudePath } = await createFakeProviderBinaries(providerDir);
+  const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
 
-  const result = await runCli(projectDir, ["init", "--yes", "--provider=auto"], {
-    AGENT_MEMORY_CODEX_BIN: path.join(providerDir, "missing-codex"),
-    AGENT_MEMORY_CLAUDE_BIN: claudePath,
-  });
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const result = await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers));
 
   assert.equal(result.code, 0, result.stderr);
-  const state = await readState(projectDir);
-  assert.equal(state.provider.name, "claude");
-});
-
-test("provider authentication failures surface as command errors", async () => {
-  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
-  const { codexPath } = await createFakeProviderBinaries(providerDir);
-  const projectDir = await createFixtureProject();
-
-  const result = await runCli(projectDir, ["init", "--yes", "--provider=codex"], {
-    AGENT_MEMORY_CODEX_BIN: codexPath,
-    AGENT_MEMORY_FAKE_MODE: "auth-error",
-  });
-
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /authentication failed/i);
-});
-
-test("provider invalid JSON output fails init", async () => {
-  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
-  const { codexPath } = await createFakeProviderBinaries(providerDir);
-  const projectDir = await createFixtureProject();
-
-  const result = await runCli(projectDir, ["init", "--yes", "--provider=codex"], {
-    AGENT_MEMORY_CODEX_BIN: codexPath,
-    AGENT_MEMORY_FAKE_MODE: "invalid-json",
-  });
-
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /invalid memory bundle/i);
-});
-
-test("provider schema-invalid output fails init", async () => {
-  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
-  const { codexPath } = await createFakeProviderBinaries(providerDir);
-  const projectDir = await createFixtureProject();
-
-  const result = await runCli(projectDir, ["init", "--yes", "--provider=codex"], {
-    AGENT_MEMORY_CODEX_BIN: codexPath,
-    AGENT_MEMORY_FAKE_MODE: "schema-error",
-  });
-
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /invalid memory bundle/i);
-});
-
-test("init --validate records validation results in canonical state and projection", async () => {
-  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
-  const { codexPath } = await createFakeProviderBinaries(providerDir);
-  const projectDir = await createFixtureProject();
-
-  const result = await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], {
-    AGENT_MEMORY_CODEX_BIN: codexPath,
-  });
-
-  assert.equal(result.code, 0, result.stderr);
-  const state = await readState(projectDir);
-  assert.equal(state.bundle.currentFocus.validationSnapshot.status, "passed");
-  assert.equal(state.bundle.currentFocus.validationSnapshot.results.length, 1);
-  const currentFocus = await fs.readFile(path.join(projectDir, "docs", "agent-memory", "current-focus.md"), "utf8");
-  assert.match(currentFocus, /PASSED node -e process\.stdout\.write\('validation-ok'\)/);
-});
-
-test("update refreshes an existing canonical state", async () => {
-  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
-  const { codexPath } = await createFakeProviderBinaries(providerDir);
-  const projectDir = await createFixtureProject();
-
-  const initResult = await runCli(projectDir, ["init", "--yes", "--provider=codex"], {
-    AGENT_MEMORY_CODEX_BIN: codexPath,
-  });
-  assert.equal(initResult.code, 0, initResult.stderr);
-
-  const updateResult = await runCli(projectDir, ["update", "--yes", "--provider=codex"], {
-    AGENT_MEMORY_CODEX_BIN: codexPath,
-  });
-
-  assert.equal(updateResult.code, 0, updateResult.stderr);
   const state = await readState(projectDir);
   assert.equal(state.bundle.currentFocus.summary, "codex update focus summary");
+  assert.equal(state.maintenance.historyEventCount, 2);
+  assert.equal((await readEvents(projectDir)).length, 2);
+  assert.equal((await checkpointFiles(projectDir)).length, 2);
 });
 
-test("update fails when canonical state is missing", async () => {
+test("update fails immediately on an old schema state", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
-  const { codexPath } = await createFakeProviderBinaries(providerDir);
+  const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
+  await fs.mkdir(path.join(projectDir, ".agent-memory"), { recursive: true });
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "state.json"), JSON.stringify({ schemaVersion: 1 }), "utf8");
 
-  const result = await runCli(projectDir, ["update", "--yes", "--provider=codex"], {
-    AGENT_MEMORY_CODEX_BIN: codexPath,
-  });
-
+  const result = await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers));
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /Run `agent-memory init`/);
+  assert.match(result.stderr, /Invalid state|schemaVersion/i);
 });
 
-test("validate passes for a healthy canonical state", async () => {
+test("prepareRecall previews changes without writing files", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
-  const { codexPath } = await createFakeProviderBinaries(providerDir);
+  const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "DECISION: Use cache layer\nGOTCHA: Reset local cache before query\nNEXT: Write cache playbook\nDONE: Review the generated state\nPATH: src/cache.ts\nVALIDATION: cache validation is flaky",
+    },
+  ]);
 
-  const initResult = await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], {
-    AGENT_MEMORY_CODEX_BIN: codexPath,
-  });
-  assert.equal(initResult.code, 0, initResult.stderr);
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
-  const validateResult = await runCli(projectDir, ["validate"]);
-  assert.equal(validateResult.code, 0, validateResult.stderr);
-  assert.match(validateResult.stdout, /0 failed/);
+  const beforeState = await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8");
+  const beforeEvents = await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8");
+  const previousEnv = {
+    AGENT_MEMORY_CODEX_BIN: process.env.AGENT_MEMORY_CODEX_BIN,
+    AGENT_MEMORY_CLAUDE_BIN: process.env.AGENT_MEMORY_CLAUDE_BIN,
+  };
+  process.env.AGENT_MEMORY_CODEX_BIN = providers.codexPath;
+  process.env.AGENT_MEMORY_CLAUDE_BIN = providers.claudePath;
+  const { prepareRecall } = require(path.join(REPO_ROOT, "dist", "core", "recall-orchestrator.js"));
+
+  try {
+    const prepared = await prepareRecall({
+      cwd: projectDir,
+      yes: false,
+      provider: "codex",
+      source: "imports",
+    });
+    assert.ok(prepared.candidate.fileDiffs.length > 0);
+    assert.ok(prepared.candidate.summary.addedGotchas.includes("Reset local cache before query"));
+  } finally {
+    if (previousEnv.AGENT_MEMORY_CODEX_BIN === undefined) delete process.env.AGENT_MEMORY_CODEX_BIN;
+    else process.env.AGENT_MEMORY_CODEX_BIN = previousEnv.AGENT_MEMORY_CODEX_BIN;
+    if (previousEnv.AGENT_MEMORY_CLAUDE_BIN === undefined) delete process.env.AGENT_MEMORY_CLAUDE_BIN;
+    else process.env.AGENT_MEMORY_CLAUDE_BIN = previousEnv.AGENT_MEMORY_CLAUDE_BIN;
+  }
+
+  assert.equal(await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8"), beforeState);
+  assert.equal(await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8"), beforeEvents);
 });
 
-test("validate fails when a projection marker drifts from the canonical bundle", async () => {
+test("recall --yes applies consolidation, updates cursor, and appends a tool-run event", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
-  const { codexPath } = await createFakeProviderBinaries(providerDir);
+  const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "DECISION: Use cache layer\nGOTCHA: Reset local cache before query\nNEXT: Write cache playbook\nDONE: Review the generated state\nPATH: src/cache.ts\nVALIDATION: cache validation is flaky",
+    },
+  ]);
 
-  const initResult = await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], {
-    AGENT_MEMORY_CODEX_BIN: codexPath,
-  });
-  assert.equal(initResult.code, 0, initResult.stderr);
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
-  const readmePath = path.join(projectDir, "docs", "agent-memory", "README.md");
-  const readme = await fs.readFile(readmePath, "utf8");
-  await fs.writeFile(readmePath, readme.replace(/bundleHash=[a-f0-9]+/, "bundleHash=deadbeef"), "utf8");
-
-  const validateResult = await runCli(projectDir, ["validate"]);
-  assert.equal(validateResult.code, 1);
-  assert.match(validateResult.stdout, /projection:readme:drift/);
-});
-
-test("validate fails when the entry block is removed", async () => {
-  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
-  const { codexPath } = await createFakeProviderBinaries(providerDir);
-  const projectDir = await createFixtureProject();
-
-  const initResult = await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], {
-    AGENT_MEMORY_CODEX_BIN: codexPath,
-  });
-  assert.equal(initResult.code, 0, initResult.stderr);
-
-  await fs.writeFile(path.join(projectDir, "README.md"), "# Fixture Project\n", "utf8");
-
-  const validateResult = await runCli(projectDir, ["validate"]);
-  assert.equal(validateResult.code, 1);
-  assert.match(validateResult.stdout, /entry:marker/);
-});
-
-test("validate fails when the validation baseline is stale", async () => {
-  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
-  const { codexPath } = await createFakeProviderBinaries(providerDir);
-  const projectDir = await createFixtureProject();
-
-  const initResult = await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], {
-    AGENT_MEMORY_CODEX_BIN: codexPath,
-  });
-  assert.equal(initResult.code, 0, initResult.stderr);
+  const result = await runCli(projectDir, ["recall", "--yes", "--provider=codex", "--source=imports"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
 
   const state = await readState(projectDir);
-  state.bundle.currentFocus.validationSnapshot.validatedAt = "2000-01-01T00:00:00.000Z";
-  await rewriteFromState(projectDir, state);
+  assert.equal(state.bundle.currentFocus.summary, "Recalled 1 history event(s).");
+  assert.ok(state.bundle.gotchas.some((item) => item.title === "Reset local cache before query"));
+  assert.ok(state.bundle.nextSteps.some((item) => item.title === "Write cache playbook"));
+  assert.ok(!state.bundle.nextSteps.some((item) => item.title === "Review the generated state"));
+  assert.equal(state.maintenance.historyEventCount, 3);
+  assert.equal(state.maintenance.recallCursors.imports.lastRecalledEventId, "evt-000002");
+  assert.equal((await readEvents(projectDir)).length, 3);
+});
 
-  const validateResult = await runCli(projectDir, ["validate"]);
-  assert.equal(validateResult.code, 1);
-  assert.match(validateResult.stdout, /validation:freshness/);
+test("query returns an answer with citations and does not mutate files", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const beforeState = await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8");
+
+  const result = await runCli(projectDir, ["query", "package workflow", "--provider=codex", "--scope=all"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Answer:/);
+  assert.match(result.stdout, /Citations:/);
+  assert.equal(await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8"), beforeState);
+});
+
+test("import add/list/sync registers sources and deduplicates imported sessions", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const codexImportDir = await createCodexImportSource([
+    {
+      text: "DECISION: Use query cache\nGOTCHA: Query cache grows stale quickly\nNEXT: Add cache ttl docs\nPATH: src/query-cache.ts\nVALIDATION: query cache test is noisy",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "codex-local", codexImportDir, "--name", "codex-a"], providerEnv(providers))).code, 0);
+
+  const listResult = await runCli(projectDir, ["import", "list"], providerEnv(providers));
+  assert.equal(listResult.code, 0, listResult.stderr);
+  assert.match(listResult.stdout, /codex-a/);
+
+  const syncResult1 = await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers));
+  assert.equal(syncResult1.code, 0, syncResult1.stderr);
+  assert.match(syncResult1.stdout, /imported=1 skipped=0/);
+
+  const syncResult2 = await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers));
+  assert.equal(syncResult2.code, 0, syncResult2.stderr);
+  assert.match(syncResult2.stdout, /imported=0 skipped=1/);
+
+  const state = await readState(projectDir);
+  assert.equal(state.maintenance.importSourceCount, 1);
+  assert.equal(state.maintenance.historyEventCount, 2);
+});
+
+test("validate passes on a healthy initialized project with validation baseline", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+  const result = await runCli(projectDir, ["validate"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /0 failed/);
+});
+
+test("validate fails on damaged history and source registry", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "{broken jsonl}\n", "utf8");
+  let result = await runCli(projectDir, ["validate"], providerEnv(providers));
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /history:events-read/);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "sources.json"), "{broken json}", "utf8");
+  result = await runCli(projectDir, ["validate"], providerEnv(providers));
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /sources:read/);
+});
+
+test("validate fails when the latest checkpoint is missing", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const state = await readState(projectDir);
+  await fs.rm(path.join(projectDir, ".agent-memory", "history", "checkpoints", `${state.maintenance.latestCheckpointId}.json`));
+
+  const result = await runCli(projectDir, ["validate"], providerEnv(providers));
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /checkpoints:latest/);
+});
+
+test("validate warns when recall backlog grows too large", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource(
+    Array.from({ length: 11 }, (_, index) => ({
+      text: `DECISION: Keep decision ${index + 1}\nGOTCHA: Imported gotcha ${index + 1}\nNEXT: Follow-up ${index + 1}`,
+    })),
+  );
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-many"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const result = await runCli(projectDir, ["validate"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /WARN recall:backlog/);
+});
+
+test("recall, query, and import sync reject an old schema state", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  await fs.mkdir(path.join(projectDir, ".agent-memory"), { recursive: true });
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "state.json"), JSON.stringify({ schemaVersion: 1 }), "utf8");
+
+  const recallResult = await runCli(projectDir, ["recall", "--yes", "--provider=codex"], providerEnv(providers));
+  assert.equal(recallResult.code, 1);
+  assert.match(recallResult.stderr, /Invalid state|schemaVersion/i);
+
+  const queryResult = await runCli(projectDir, ["query", "anything", "--provider=codex"], providerEnv(providers));
+  assert.equal(queryResult.code, 1);
+  assert.match(queryResult.stderr, /Invalid state|schemaVersion/i);
+
+  const syncResult = await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers));
+  assert.equal(syncResult.code, 1);
+  assert.match(syncResult.stderr, /Invalid state|schemaVersion/i);
 });

@@ -33,7 +33,16 @@ async function readContextFile(rootDir: string, relativePath: string): Promise<C
 
 export async function collectContext(rootDir: string, mode: CommandMode): Promise<CollectedContext> {
   const scan = await scanProject(rootDir);
-  const previousState = await readStateIfPresent(rootDir);
+  const previousState = await (async () => {
+    try {
+      return await readStateIfPresent(rootDir);
+    } catch (error) {
+      if (mode === "init") {
+        return null;
+      }
+      throw error;
+    }
+  })();
   const entryFileCandidates = (await listExistingEntryFiles(rootDir)).map((path) => relative(rootDir, path) || ".");
   const selectedEntryFile = relative(
     rootDir,

@@ -1,9 +1,11 @@
-import {
-  STATE_SCHEMA_VERSION,
-} from "./constants";
+import { STATE_SCHEMA_VERSION } from "./constants";
 import type {
   AgentMemoryBundle,
   AgentMemoryState,
+  HistoryEvent,
+  HistorySignalSet,
+  HistorySource,
+  QueryResult,
   ValidationSnapshotStatus,
   ValidationRunStatus,
 } from "../types";
@@ -12,11 +14,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function expectRecord(
-  value: unknown,
-  path: string,
-  errors: string[],
-): Record<string, unknown> | null {
+function expectRecord(value: unknown, path: string, errors: string[]): Record<string, unknown> | null {
   if (!isRecord(value)) {
     errors.push(`${path} must be an object.`);
     return null;
@@ -40,6 +38,15 @@ function expectNullableString(value: unknown, path: string, errors: string[]): s
   }
 
   return expectString(value, path, errors);
+}
+
+function expectNumber(value: unknown, path: string, errors: string[]): number | null {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    errors.push(`${path} must be a number.`);
+    return null;
+  }
+
+  return value;
 }
 
 function expectStringArray(value: unknown, path: string, errors: string[]): string[] | null {
@@ -73,11 +80,7 @@ function expectEnum<T extends string>(
   return value as T;
 }
 
-function validateValidationRunStatus(
-  value: unknown,
-  path: string,
-  errors: string[],
-): ValidationRunStatus | null {
+function validateValidationRunStatus(value: unknown, path: string, errors: string[]): ValidationRunStatus | null {
   return expectEnum(value, ["passed", "failed", "unavailable"] as const, path, errors);
 }
 
@@ -168,6 +171,56 @@ function validateNextStep(value: unknown, path: string, errors: string[]): void 
   expectString(record.why, `${path}.why`, errors);
   expectString(record.start, `${path}.start`, errors);
   expectString(record.done, `${path}.done`, errors);
+}
+
+export function validateHistorySignalsShape(value: unknown, path = "signals"): string[] {
+  const errors: string[] = [];
+  const record = expectRecord(value, path, errors);
+  if (!record) {
+    return errors;
+  }
+
+  expectStringArray(record.decisions, `${path}.decisions`, errors);
+  expectStringArray(record.gotchas, `${path}.gotchas`, errors);
+  expectStringArray(record.nextStepHints, `${path}.nextStepHints`, errors);
+  expectStringArray(record.keyPaths, `${path}.keyPaths`, errors);
+  expectStringArray(record.validationObservations, `${path}.validationObservations`, errors);
+  return errors;
+}
+
+export function validateHistoryEventShape(value: unknown): string[] {
+  const errors: string[] = [];
+  const record = expectRecord(value, "event", errors);
+  if (!record) {
+    return errors;
+  }
+
+  expectString(record.id, "event.id", errors);
+  expectEnum(record.kind, ["tool_run", "imported_session"] as const, "event.kind", errors);
+  expectString(record.sourceId, "event.sourceId", errors);
+  expectNullableString(record.externalItemId, "event.externalItemId", errors);
+  expectString(record.createdAt, "event.createdAt", errors);
+  expectString(record.contentHash, "event.contentHash", errors);
+  expectString(record.summary, "event.summary", errors);
+  expectString(record.sourceRef, "event.sourceRef", errors);
+  errors.push(...validateHistorySignalsShape(record.signals, "event.signals"));
+  return errors;
+}
+
+export function validateHistorySourceShape(value: unknown): string[] {
+  const errors: string[] = [];
+  const record = expectRecord(value, "source", errors);
+  if (!record) {
+    return errors;
+  }
+
+  expectString(record.id, "source.id", errors);
+  expectString(record.type, "source.type", errors);
+  expectString(record.path, "source.path", errors);
+  expectString(record.createdAt, "source.createdAt", errors);
+  expectString(record.updatedAt, "source.updatedAt", errors);
+  expectNullableString(record.lastSyncedAt, "source.lastSyncedAt", errors);
+  return errors;
 }
 
 export function validateBundleShape(value: unknown): string[] {
@@ -275,6 +328,48 @@ export function validateBundleShape(value: unknown): string[] {
   return errors;
 }
 
+export function validateQueryResultShape(value: unknown): string[] {
+  const errors: string[] = [];
+  const result = expectRecord(value, "query", errors);
+  if (!result) {
+    return errors;
+  }
+
+  expectString(result.answer, "query.answer", errors);
+  expectString(result.why, "query.why", errors);
+
+  if (!Array.isArray(result.citations)) {
+    errors.push("query.citations must be an array.");
+    return errors;
+  }
+
+  for (const [index, item] of result.citations.entries()) {
+    const citation = expectRecord(item, `query.citations[${index}]`, errors);
+    if (!citation) {
+      continue;
+    }
+
+    expectEnum(citation.sourceType, ["bundle", "event", "checkpoint"] as const, `query.citations[${index}].sourceType`, errors);
+    expectString(citation.sourceId, `query.citations[${index}].sourceId`, errors);
+    expectString(citation.pathOrSection, `query.citations[${index}].pathOrSection`, errors);
+    expectString(citation.summary, `query.citations[${index}].summary`, errors);
+  }
+
+  return errors;
+}
+
+export function validateImportedSessionShape(value: unknown): string[] {
+  const errors: string[] = [];
+  const normalized = expectRecord(value, "normalized", errors);
+  if (!normalized) {
+    return errors;
+  }
+
+  expectString(normalized.summary, "normalized.summary", errors);
+  errors.push(...validateHistorySignalsShape(normalized.signals, "normalized.signals"));
+  return errors;
+}
+
 export function validateStateShape(value: unknown): string[] {
   const errors: string[] = [];
   const state = expectRecord(value, "state", errors);
@@ -299,6 +394,32 @@ export function validateStateShape(value: unknown): string[] {
   }
 
   errors.push(...validateBundleShape(state.bundle).map((message) => message.replace(/^bundle/, "state.bundle")));
+
+  const maintenance = expectRecord(state.maintenance, "state.maintenance", errors);
+  if (maintenance) {
+    expectNullableString(maintenance.lastRecalledAt, "state.maintenance.lastRecalledAt", errors);
+    expectNullableString(maintenance.lastRecalledEventId, "state.maintenance.lastRecalledEventId", errors);
+    expectNullableString(maintenance.latestCheckpointId, "state.maintenance.latestCheckpointId", errors);
+    expectNumber(maintenance.historyEventCount, "state.maintenance.historyEventCount", errors);
+    expectNumber(maintenance.importSourceCount, "state.maintenance.importSourceCount", errors);
+
+    const recallCursors = expectRecord(maintenance.recallCursors, "state.maintenance.recallCursors", errors);
+    if (recallCursors) {
+      for (const scope of ["all", "local", "imports"] as const) {
+        const cursor = expectRecord(recallCursors[scope], `state.maintenance.recallCursors.${scope}`, errors);
+        if (!cursor) {
+          continue;
+        }
+        expectNullableString(cursor.lastRecalledAt, `state.maintenance.recallCursors.${scope}.lastRecalledAt`, errors);
+        expectNullableString(
+          cursor.lastRecalledEventId,
+          `state.maintenance.recallCursors.${scope}.lastRecalledEventId`,
+          errors,
+        );
+      }
+    }
+  }
+
   return errors;
 }
 
@@ -308,6 +429,22 @@ export function asAgentMemoryBundle(value: unknown): AgentMemoryBundle | null {
 
 export function asAgentMemoryState(value: unknown): AgentMemoryState | null {
   return validateStateShape(value).length === 0 ? (value as AgentMemoryState) : null;
+}
+
+export function asQueryResult(value: unknown): QueryResult | null {
+  return validateQueryResultShape(value).length === 0 ? (value as QueryResult) : null;
+}
+
+export function asHistorySignals(value: unknown): HistorySignalSet | null {
+  return validateHistorySignalsShape(value).length === 0 ? (value as HistorySignalSet) : null;
+}
+
+export function asHistoryEvent(value: unknown): HistoryEvent | null {
+  return validateHistoryEventShape(value).length === 0 ? (value as HistoryEvent) : null;
+}
+
+export function asHistorySource(value: unknown): HistorySource | null {
+  return validateHistorySourceShape(value).length === 0 ? (value as HistorySource) : null;
 }
 
 export const bundleOutputSchema: Record<string, unknown> = {
@@ -398,14 +535,8 @@ export const bundleOutputSchema: Record<string, unknown> = {
       required: ["summary", "currentState", "knownRisks", "validationSnapshot"],
       properties: {
         summary: { type: "string" },
-        currentState: {
-          type: "array",
-          items: { type: "string" },
-        },
-        knownRisks: {
-          type: "array",
-          items: { type: "string" },
-        },
+        currentState: { type: "array", items: { type: "string" } },
+        knownRisks: { type: "array", items: { type: "string" } },
         validationSnapshot: {
           type: "object",
           additionalProperties: false,
@@ -428,18 +559,12 @@ export const bundleOutputSchema: Record<string, unknown> = {
                 properties: {
                   label: { type: "string" },
                   command: { type: "string" },
-                  status: {
-                    type: "string",
-                    enum: ["passed", "failed", "unavailable"],
-                  },
+                  status: { type: "string", enum: ["passed", "failed", "unavailable"] },
                   summary: { type: "string" },
                 },
               },
             },
-            suggestedNextActions: {
-              type: "array",
-              items: { type: "string" },
-            },
+            suggestedNextActions: { type: "array", items: { type: "string" } },
           },
         },
       },
@@ -481,13 +606,54 @@ export const bundleOutputSchema: Record<string, unknown> = {
         required: ["label", "command", "purpose"],
         properties: {
           label: { type: "string" },
-          command: {
-            type: "array",
-            minItems: 1,
-            items: { type: "string" },
-          },
+          command: { type: "array", minItems: 1, items: { type: "string" } },
           purpose: { type: "string" },
         },
+      },
+    },
+  },
+};
+
+export const queryOutputSchema: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["answer", "why", "citations"],
+  properties: {
+    answer: { type: "string" },
+    why: { type: "string" },
+    citations: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["sourceType", "sourceId", "pathOrSection", "summary"],
+        properties: {
+          sourceType: { type: "string", enum: ["bundle", "event", "checkpoint"] },
+          sourceId: { type: "string" },
+          pathOrSection: { type: "string" },
+          summary: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
+export const importedSessionOutputSchema: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary", "signals"],
+  properties: {
+    summary: { type: "string" },
+    signals: {
+      type: "object",
+      additionalProperties: false,
+      required: ["decisions", "gotchas", "nextStepHints", "keyPaths", "validationObservations"],
+      properties: {
+        decisions: { type: "array", items: { type: "string" } },
+        gotchas: { type: "array", items: { type: "string" } },
+        nextStepHints: { type: "array", items: { type: "string" } },
+        keyPaths: { type: "array", items: { type: "string" } },
+        validationObservations: { type: "array", items: { type: "string" } },
       },
     },
   },

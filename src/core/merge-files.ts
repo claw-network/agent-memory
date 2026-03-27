@@ -27,6 +27,16 @@ function insertEntrySnippet(existing: string, snippet: string): string {
   return `${existing.slice(0, headingEnd)}\n\n${snippet}\n${existing.slice(headingEnd).replace(/^\n*/, "\n")}`;
 }
 
+export function renderEntryContent(existing: string | null, snippet: string): string {
+  if (existing === null) {
+    return `${snippet}\n`;
+  }
+
+  return ENTRY_BLOCK_REGEX.test(existing)
+    ? existing.replace(ENTRY_BLOCK_REGEX, `${snippet}\n`)
+    : insertEntrySnippet(existing, snippet);
+}
+
 function nextFileWriteKind(existsAlready: boolean): PlannedChange["kind"] {
   return existsAlready ? "overwrite" : "create";
 }
@@ -81,9 +91,7 @@ export async function applyEntrySnippet(path: string, snippet: string): Promise<
   }
 
   const existing = await readFile(path, "utf8");
-  const nextContent = ENTRY_BLOCK_REGEX.test(existing)
-    ? existing.replace(ENTRY_BLOCK_REGEX, `${snippet}\n`)
-    : insertEntrySnippet(existing, snippet);
+  const nextContent = renderEntryContent(existing, snippet);
 
   await writeFile(path, nextContent, "utf8");
 }

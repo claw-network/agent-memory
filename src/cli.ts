@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 
 import { cwd, exit } from "node:process";
+import { runImportAdd, runImportList, runImportSync } from "./commands/import";
 import { runInit } from "./commands/init";
+import { runQuery } from "./commands/query";
+import { runRecall } from "./commands/recall";
 import { runUpdate } from "./commands/update";
 import { runValidate } from "./commands/validate";
-import type { ProviderPreference } from "./types";
+import type { ProviderPreference, QueryScope, RecallSourceScope } from "./types";
 
-interface ParsedArgs {
-  command: string | null;
+interface CommonArgs {
   yes: boolean;
   validate: boolean;
   provider: ProviderPreference;
@@ -19,12 +21,20 @@ function printHelp(): void {
   console.log("Usage:");
   console.log("  agent-memory init [--yes] [--validate] [--provider=auto|codex|claude]");
   console.log("  agent-memory update [--yes] [--validate] [--provider=auto|codex|claude]");
+  console.log("  agent-memory recall [--yes] [--provider=auto|codex|claude] [--source=all|local|imports]");
+  console.log("  agent-memory query <question> [--provider=auto|codex|claude] [--scope=state|history|all]");
+  console.log("  agent-memory import add <type> <path> [--name <id>]");
+  console.log("  agent-memory import sync [<id>|--all] [--provider=auto|codex|claude]");
+  console.log("  agent-memory import list");
   console.log("  agent-memory validate");
   console.log("");
   console.log("Commands:");
-  console.log("  init      Run a real background agent, rebuild canonical memory state, and rewrite projections.");
-  console.log("  update    Refresh canonical memory state and rewrite projections from the existing state model.");
-  console.log("  validate  Audit canonical state, projection freshness, entry wiring, and validation baseline freshness.");
+  console.log("  init      Rebuild canonical memory state, projections, history, and the initial checkpoint.");
+  console.log("  update    Refresh canonical memory state and write a new checkpoint and tool-run event.");
+  console.log("  recall    Consolidate history into the canonical memory with preview and diff output.");
+  console.log("  query     Answer a memory question with citations from bundle, history, or checkpoints.");
+  console.log("  import    Manage external session sources and sync them into history events.");
+  console.log("  validate  Audit canonical state, history, checkpoints, projections, and recall health.");
 }
 
 function parseProvider(value: string): ProviderPreference {
@@ -35,12 +45,30 @@ function parseProvider(value: string): ProviderPreference {
   throw new Error(`Unknown provider: ${value}`);
 }
 
-function parseArgs(argv: string[]): ParsedArgs {
+function parseRecallSource(value: string): RecallSourceScope {
+  if (value === "all" || value === "local" || value === "imports") {
+    return value;
+  }
+
+  throw new Error(`Unknown recall source: ${value}`);
+}
+
+function parseQueryScope(value: string): QueryScope {
+  if (value === "state" || value === "history" || value === "all") {
+    return value;
+  }
+
+  throw new Error(`Unknown query scope: ${value}`);
+}
+
+function parseCommonFlags(argv: string[]): { rest: string[]; common: CommonArgs } {
   const args = [...argv];
-  let yes = false;
-  let validate = false;
-  let provider: ProviderPreference = "auto";
-  let command: string | null = null;
+  const rest: string[] = [];
+  const common: CommonArgs = {
+    yes: false,
+    validate: false,
+    provider: "auto",
+  };
 
   while (args.length > 0) {
     const value = args.shift();
@@ -49,77 +77,258 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
 
     if (value === "--yes" || value === "-y") {
-      yes = true;
+      common.yes = true;
       continue;
     }
 
     if (value === "--validate") {
-      validate = true;
+      common.validate = true;
       continue;
     }
 
     if (value.startsWith("--provider=")) {
-      provider = parseProvider(value.slice("--provider=".length));
+      common.provider = parseProvider(value.slice("--provider=".length));
       continue;
     }
 
     if (value === "--provider") {
-      const nextValue = args.shift();
-      if (!nextValue) {
+      const next = args.shift();
+      if (!next) {
         throw new Error("Missing value for --provider");
       }
-      provider = parseProvider(nextValue);
+      common.provider = parseProvider(next);
       continue;
     }
 
-    if (value === "--help" || value === "-h") {
-      printHelp();
-      exit(0);
-    }
-
-    if (!command) {
-      command = value;
-      continue;
-    }
-
-    throw new Error(`Unknown argument: ${value}`);
+    rest.push(value, ...args);
+    break;
   }
 
-  return { command, yes, validate, provider };
+  return { rest, common };
 }
 
 async function main(): Promise<void> {
-  const parsed = parseArgs(process.argv.slice(2));
-
-  if (!parsed.command) {
+  const argv = process.argv.slice(2);
+  if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
     printHelp();
     return;
   }
 
-  switch (parsed.command) {
+  const [command, ...restArgs] = argv;
+  switch (command) {
     case "init": {
-      const code = await runInit({
-        cwd: cwd(),
-        yes: parsed.yes,
-        validate: parsed.validate,
-        provider: parsed.provider,
-      });
+      const { common, rest } = parseCommonFlags(restArgs);
+      if (rest.length > 0) {
+        throw new Error(`Unknown argument: ${rest[0]}`);
+      }
+      const code = await runInit({ cwd: cwd(), ...common });
       if (code !== 0) {
         exit(code);
       }
       return;
     }
     case "update": {
-      const code = await runUpdate({
+      const { common, rest } = parseCommonFlags(restArgs);
+      if (rest.length > 0) {
+        throw new Error(`Unknown argument: ${rest[0]}`);
+      }
+      const code = await runUpdate({ cwd: cwd(), ...common });
+      if (code !== 0) {
+        exit(code);
+      }
+      return;
+    }
+    case "recall": {
+      const { common, rest } = parseCommonFlags(restArgs);
+      let source: RecallSourceScope = "all";
+      const remaining = [...rest];
+      while (remaining.length > 0) {
+        const value = remaining.shift();
+        if (!value) {
+          continue;
+        }
+
+        if (value.startsWith("--source=")) {
+          source = parseRecallSource(value.slice("--source=".length));
+          continue;
+        }
+
+        if (value === "--source") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --source");
+          }
+          source = parseRecallSource(next);
+          continue;
+        }
+
+        throw new Error(`Unknown argument: ${value}`);
+      }
+
+      const code = await runRecall({
         cwd: cwd(),
-        yes: parsed.yes,
-        validate: parsed.validate,
-        provider: parsed.provider,
+        yes: common.yes,
+        provider: common.provider,
+        source,
       });
       if (code !== 0) {
         exit(code);
       }
       return;
+    }
+    case "query": {
+      let provider: ProviderPreference = "auto";
+      let scope: QueryScope = "all";
+      const questionParts: string[] = [];
+      const remaining = [...restArgs];
+      while (remaining.length > 0) {
+        const value = remaining.shift();
+        if (!value) {
+          continue;
+        }
+
+        if (value.startsWith("--provider=")) {
+          provider = parseProvider(value.slice("--provider=".length));
+          continue;
+        }
+
+        if (value === "--provider") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --provider");
+          }
+          provider = parseProvider(next);
+          continue;
+        }
+
+        if (value.startsWith("--scope=")) {
+          scope = parseQueryScope(value.slice("--scope=".length));
+          continue;
+        }
+
+        if (value === "--scope") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --scope");
+          }
+          scope = parseQueryScope(next);
+          continue;
+        }
+
+        questionParts.push(value, ...remaining);
+        break;
+      }
+
+      const question = questionParts.join(" ").trim();
+      if (!question) {
+        throw new Error("Query command requires a question.");
+      }
+
+      const code = await runQuery({
+        cwd: cwd(),
+        provider,
+        scope,
+        question,
+      });
+      if (code !== 0) {
+        exit(code);
+      }
+      return;
+    }
+    case "import": {
+      const [subcommand, ...importArgs] = restArgs;
+      if (!subcommand) {
+        throw new Error("Import command requires a subcommand: add, sync, or list.");
+      }
+
+      if (subcommand === "add") {
+        const [type, pathValue, ...tail] = importArgs;
+        if (!type || !pathValue) {
+          throw new Error("Usage: agent-memory import add <type> <path> [--name <id>]");
+        }
+        let name: string | null = null;
+        const remaining = [...tail];
+        while (remaining.length > 0) {
+          const value = remaining.shift();
+          if (!value) {
+            continue;
+          }
+          if (value === "--name") {
+            const next = remaining.shift();
+            if (!next) {
+              throw new Error("Missing value for --name");
+            }
+            name = next;
+            continue;
+          }
+          if (value.startsWith("--name=")) {
+            name = value.slice("--name=".length);
+            continue;
+          }
+          throw new Error(`Unknown argument: ${value}`);
+        }
+        const code = await runImportAdd({ cwd: cwd(), type, path: pathValue, name });
+        if (code !== 0) {
+          exit(code);
+        }
+        return;
+      }
+
+      if (subcommand === "list") {
+        const code = await runImportList(cwd());
+        if (code !== 0) {
+          exit(code);
+        }
+        return;
+      }
+
+      if (subcommand === "sync") {
+        let provider: ProviderPreference = "auto";
+        let all = false;
+        let target: string | null = null;
+        const remaining = [...importArgs];
+        while (remaining.length > 0) {
+          const value = remaining.shift();
+          if (!value) {
+            continue;
+          }
+          if (value.startsWith("--provider=")) {
+            provider = parseProvider(value.slice("--provider=".length));
+            continue;
+          }
+          if (value === "--provider") {
+            const next = remaining.shift();
+            if (!next) {
+              throw new Error("Missing value for --provider");
+            }
+            provider = parseProvider(next);
+            continue;
+          }
+          if (value === "--all") {
+            all = true;
+            continue;
+          }
+          if (value.startsWith("--")) {
+            throw new Error(`Unknown argument: ${value}`);
+          }
+          if (target) {
+            throw new Error(`Unexpected extra argument: ${value}`);
+          }
+          target = value;
+        }
+        const code = await runImportSync({
+          cwd: cwd(),
+          provider,
+          target,
+          all,
+        });
+        if (code !== 0) {
+          exit(code);
+        }
+        return;
+      }
+
+      throw new Error(`Unknown import subcommand: ${subcommand}`);
     }
     case "validate": {
       const code = await runValidate(cwd());
@@ -129,7 +338,7 @@ async function main(): Promise<void> {
       return;
     }
     default:
-      throw new Error(`Unknown command: ${parsed.command}`);
+      throw new Error(`Unknown command: ${command}`);
   }
 }
 

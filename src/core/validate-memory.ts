@@ -1,10 +1,11 @@
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { PROJECTION_VERSION, ENTRY_VERSION, VALIDATION_MAX_AGE_DAYS } from "./constants";
+import { ENTRY_VERSION, PROJECTION_VERSION, RECALL_WARN_EVENT_COUNT, VALIDATION_MAX_AGE_DAYS } from "./constants";
 import { parseEntryMarker, parseProjectionMarker, projectState } from "./bundle-projector";
-import { validateStateShape } from "./bundle-schema";
+import { validateHistoryEventShape, validateHistorySourceShape, validateStateShape } from "./bundle-schema";
+import { getCheckpointsDir, getEventsPath, getSourcesPath, listCheckpointIds, readHistoryEvents, readLatestCheckpoint, readSources } from "./history-store";
 import { computeBundleHash, getStatePath } from "./state-store";
-import type { AuditFinding, AgentMemoryState } from "../types";
+import type { AgentMemoryState, AuditFinding } from "../types";
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -29,6 +30,11 @@ function isValidationFresh(validatedAt: string): boolean {
   return Date.now() - validatedMs <= maxAgeMs;
 }
 
+function parseEventOrdinal(eventId: string): number {
+  const match = eventId.match(/^evt-(\d+)$/);
+  return match ? Number(match[1]) : -1;
+}
+
 function collectReferencedPaths(state: AgentMemoryState): string[] {
   return Array.from(
     new Set([
@@ -50,29 +56,12 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
     findings.push({
       status: "fail",
       code: "state:missing",
-      message: ".agent-memory/state.json is missing. Run `agent-memory init` first.",
+      message: ".agent-memory/state.json is missing. Run `agent-memory init` to rebuild the canonical system.",
     });
     return findings;
   }
 
-  findings.push({
-    status: "pass",
-    code: "state:file",
-    message: ".agent-memory/state.json exists.",
-  });
-
-  let rawState = "";
-  try {
-    rawState = await readFile(statePath, "utf8");
-  } catch (error) {
-    findings.push({
-      status: "fail",
-      code: "state:read",
-      message: `Unable to read .agent-memory/state.json: ${error instanceof Error ? error.message : String(error)}`,
-    });
-    return findings;
-  }
-
+  const rawState = await readFile(statePath, "utf8");
   let parsedState: unknown;
   try {
     parsedState = JSON.parse(rawState) as unknown;
@@ -102,8 +91,7 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
     message: "state.json passed schema validation.",
   });
 
-  const computedHash = computeBundleHash(state.bundle);
-  if (computedHash !== state.bundleHash) {
+  if (computeBundleHash(state.bundle) !== state.bundleHash) {
     findings.push({
       status: "fail",
       code: "state:bundle-hash",
@@ -113,8 +101,186 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
     findings.push({
       status: "pass",
       code: "state:bundle-hash",
-      message: "state.json bundleHash matches the bundle content.",
+      message: "state.json bundleHash matches the stored bundle content.",
     });
+  }
+
+  const eventsPath = getEventsPath(rootDir);
+  if (!(await exists(eventsPath))) {
+    findings.push({
+      status: "fail",
+      code: "history:events-missing",
+      message: ".agent-memory/history/events.jsonl is missing.",
+    });
+  } else {
+    let events;
+    try {
+      events = await readHistoryEvents(rootDir);
+    } catch (error) {
+      findings.push({
+        status: "fail",
+        code: "history:events-read",
+        message: `events.jsonl could not be parsed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      return findings;
+    }
+    let historyValid = true;
+    let previousOrdinal = 0;
+    for (const event of events) {
+      const errors = validateHistoryEventShape(event);
+      if (errors.length > 0) {
+        findings.push({
+          status: "fail",
+          code: `history:event:${event.id}`,
+          message: errors.join(" "),
+        });
+        historyValid = false;
+        continue;
+      }
+
+      const ordinal = parseEventOrdinal(event.id);
+      if (ordinal !== previousOrdinal + 1) {
+        findings.push({
+          status: "fail",
+          code: "history:continuity",
+          message: `Event ids are not continuous around ${event.id}.`,
+        });
+        historyValid = false;
+        break;
+      }
+      previousOrdinal = ordinal;
+    }
+
+    if (historyValid) {
+      findings.push({
+        status: "pass",
+        code: "history:events",
+        message: "History events are readable and continuous.",
+      });
+    }
+
+    if (state.maintenance.historyEventCount !== events.length) {
+      findings.push({
+        status: "fail",
+        code: "history:event-count",
+        message: `state.json expects ${state.maintenance.historyEventCount} history events, but ${events.length} were found.`,
+      });
+    } else {
+      findings.push({
+        status: "pass",
+        code: "history:event-count",
+        message: "state.json historyEventCount matches the event log.",
+      });
+    }
+
+    const unrecalledEvents = events.filter((event) => parseEventOrdinal(event.id) > parseEventOrdinal(state.maintenance.lastRecalledEventId ?? "evt-000000"));
+    if (unrecalledEvents.length > RECALL_WARN_EVENT_COUNT) {
+      findings.push({
+        status: "warn",
+        code: "recall:backlog",
+        message: `${unrecalledEvents.length} unrecalled history events are waiting to be consolidated.`,
+      });
+    } else {
+      findings.push({
+        status: "pass",
+        code: "recall:backlog",
+        message: "Recall backlog is within the healthy threshold.",
+      });
+    }
+  }
+
+  const sourcesPath = getSourcesPath(rootDir);
+  if (!(await exists(sourcesPath))) {
+    findings.push({
+      status: "fail",
+      code: "sources:missing",
+      message: ".agent-memory/sources.json is missing.",
+    });
+  } else {
+    let sources;
+    try {
+      sources = await readSources(rootDir);
+    } catch (error) {
+      findings.push({
+        status: "fail",
+        code: "sources:read",
+        message: `sources.json could not be parsed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      return findings;
+    }
+    const invalidSource = sources.find((source) => validateHistorySourceShape(source).length > 0);
+    if (invalidSource) {
+      findings.push({
+        status: "fail",
+        code: "sources:schema",
+        message: `History source ${invalidSource.id} is invalid.`,
+      });
+    } else {
+      findings.push({
+        status: "pass",
+        code: "sources:schema",
+        message: "sources.json is valid.",
+      });
+    }
+
+    if (state.maintenance.importSourceCount !== sources.length) {
+      findings.push({
+        status: "fail",
+        code: "sources:count",
+        message: `state.json expects ${state.maintenance.importSourceCount} import sources, but ${sources.length} were found.`,
+      });
+    } else {
+      findings.push({
+        status: "pass",
+        code: "sources:count",
+        message: "state.json importSourceCount matches the source registry.",
+      });
+    }
+  }
+
+  const checkpointsDir = getCheckpointsDir(rootDir);
+  if (!(await exists(checkpointsDir))) {
+    findings.push({
+      status: "fail",
+      code: "checkpoints:missing",
+      message: ".agent-memory/history/checkpoints is missing.",
+    });
+  } else {
+    const checkpointIds = await listCheckpointIds(rootDir);
+    if (checkpointIds.length === 0) {
+      findings.push({
+        status: "fail",
+        code: "checkpoints:empty",
+        message: "No checkpoints were found.",
+      });
+    } else if (!state.maintenance.latestCheckpointId || !checkpointIds.includes(state.maintenance.latestCheckpointId)) {
+      findings.push({
+        status: "fail",
+        code: "checkpoints:latest",
+        message: "state.json latestCheckpointId does not reference an existing checkpoint.",
+      });
+    } else {
+      const latestCheckpoint = await readLatestCheckpoint(rootDir, state.maintenance.latestCheckpointId);
+      if (!latestCheckpoint) {
+        findings.push({
+          status: "fail",
+          code: "checkpoints:read",
+          message: "The latest checkpoint could not be read.",
+        });
+      } else if (latestCheckpoint.bundleHash !== state.bundleHash) {
+        findings.push({
+          status: "warn",
+          code: "checkpoints:bundle-drift",
+          message: "The latest checkpoint bundleHash differs from the current canonical state.",
+        });
+      } else {
+        findings.push({
+          status: "pass",
+          code: "checkpoints:latest",
+          message: "The latest checkpoint is present and aligned with the canonical state.",
+        });
+      }
+    }
   }
 
   const projection = projectState(rootDir, state);

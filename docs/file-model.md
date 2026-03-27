@@ -1,30 +1,31 @@
 # File Model
 
-`agent-memory` now uses a canonical-state-plus-projection model.
+`agent-memory` now uses a state + history + checkpoint model.
 
-The important change is simple:
+The source of truth is no longer just one generated markdown layer. The canonical system is:
 
-- `/.agent-memory/state.json` is the only source of truth
-- `docs/agent-memory/*.md` are generated projections
+- `/.agent-memory/state.json`
+- `/.agent-memory/history/events.jsonl`
+- `/.agent-memory/history/checkpoints/*.json`
+- `/.agent-memory/sources.json`
 
-## Canonical State
+## `state.json`
 
-The canonical file is:
-
-```text
-.agent-memory/state.json
-```
+This is the active canonical memory state.
 
 It stores:
 
 - `schemaVersion`
 - `generatorVersion`
-- `provider` metadata for the analysis run
+- `provider`
 - `generatedAt`
 - `bundleHash`
 - `bundle`
+- `maintenance`
 
-The `bundle` contains the durable memory payload:
+### `bundle`
+
+The active memory payload:
 
 - `project`
 - `projectMap`
@@ -33,9 +34,70 @@ The `bundle` contains the durable memory payload:
 - `nextSteps`
 - `validationCommands`
 
+### `maintenance`
+
+Operational metadata for the memory system:
+
+- `lastRecalledAt`
+- `lastRecalledEventId`
+- `latestCheckpointId`
+- `historyEventCount`
+- `importSourceCount`
+- `recallCursors`
+
+## `history/events.jsonl`
+
+This is an append-only event stream.
+
+Each event is normalized into one of two kinds:
+
+- `tool_run`
+- `imported_session`
+
+Each event carries:
+
+- `id`
+- `sourceId`
+- `createdAt`
+- `contentHash`
+- `summary`
+- `signals`
+- `sourceRef`
+
+`signals` is the durable extraction layer used by recall and query. It includes:
+
+- `decisions`
+- `gotchas`
+- `nextStepHints`
+- `keyPaths`
+- `validationObservations`
+
+## `history/checkpoints/`
+
+Each checkpoint stores a snapshot of the canonical bundle after a meaningful write.
+
+This gives the system:
+
+- a stable diff baseline for `recall`
+- a retrievable memory layer for `query`
+- a structural integrity target for `validate`
+
+## `sources.json`
+
+This is the import source registry.
+
+Each source records:
+
+- `id`
+- `type`
+- `path`
+- `createdAt`
+- `updatedAt`
+- `lastSyncedAt`
+
 ## Projection Files
 
-Projection files live in:
+These are generated from the current canonical bundle:
 
 - `docs/agent-memory/README.md`
 - `docs/agent-memory/project-map.md`
@@ -43,108 +105,32 @@ Projection files live in:
 - `docs/agent-memory/gotchas.md`
 - `docs/agent-memory/next-steps.md`
 
-Each file starts with a versioned projection marker that includes the canonical `bundleHash`.
-
-Example:
-
-```md
-<!-- agent-memory:projection file=project-map version=2 bundleHash=<sha256> -->
-```
-
-That marker lets `validate` confirm that the readable file still matches the current canonical bundle.
+Each file starts with a versioned projection marker containing the active `bundleHash`.
 
 ## Entry Block
 
-`agent-memory` also writes a versioned entry block into the repository’s preferred top-level entry file.
-
-Marker shape:
+The top-level repository entry file contains a versioned project-memory block:
 
 ```md
-<!-- agent-memory:entry version=2 bundleHash=<sha256> start -->
+<!-- agent-memory:entry version=3 bundleHash=<sha256> start -->
 ...
 <!-- agent-memory:entry end -->
 ```
 
-This lets `validate` check that contributors still have a correct top-level pointer into the memory system.
-
-## Bundle Sections
-
-### `project`
-
-High-level identity and orientation:
-
-- project summary
-- ecosystem
-- package manager
-- workspace mechanism
-- recommended entry file
-- key paths
-
-### `projectMap`
-
-Stable structure:
-
-- modules
-- entrypoints
-- dense source areas
-- architecture notes
-- first files to read
-
-### `currentFocus`
-
-Current operational state:
-
-- summary
-- current state bullets
-- known risks
-- validation snapshot
-
-### `gotchas`
-
-Confirmed expensive traps:
-
-- `title`
-- `symptom`
-- `cause`
-- `correctPath`
-
-### `nextSteps`
-
-Actionable follow-ups:
-
-- `title`
-- `why`
-- `start`
-- `done`
-
-### `validationCommands`
-
-Up to two agent-recommended validation commands with:
-
-- `label`
-- `command`
-- `purpose`
-
-## Validation Freshness
-
-Validation freshness now comes from the canonical bundle, not from a special markdown metadata header.
-
-`currentFocus.validationSnapshot` carries:
-
-- `status`
-- `validatedAt`
-- `summary`
-- `results`
-- `suggestedNextActions`
-
-`validate` reads freshness from there and fails when the baseline is missing or stale.
+This lets `validate` confirm that contributors still have the correct top-level path into the memory system.
 
 ## Compatibility Note
 
-The old per-file managed-marker system is gone. There is no unmanaged/backup branch in the new model.
+The current schema is intentionally breaking.
 
-If a repository still uses the previous format, rerun:
+- old state files are not read
+- old projection markers are not preserved
+- there is no migration path
+
+Re-run:
 
 ```bash
 npx agent-memory init
 ```
+
+to rebuild a repository into the current model.

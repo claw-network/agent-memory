@@ -1,6 +1,6 @@
 # Adoption Guide
 
-This guide is for teams adopting the new canonical-state `agent-memory` model in an existing repository.
+This guide is for teams adopting the current `agent-memory` system in an existing repository.
 
 ## First Run
 
@@ -13,48 +13,60 @@ npx agent-memory init
 
 This will:
 
-- build the first canonical memory bundle
-- create `/.agent-memory/state.json`
+- rebuild `/.agent-memory/`
+- create the first canonical state
+- create the first history event
+- create the first checkpoint
 - rewrite `docs/agent-memory/*.md`
 - insert or replace the top-level project memory block
 
-## Runtime Control
+## Important Breaking Change
 
-If you want to force a specific runtime for the analysis pass:
+This version is intentionally destructive.
+
+- there is no migration path
+- old `state.json` files are not reused
+- old projection markers are not reused
+
+Treat adoption as a rebuild:
 
 ```bash
-npx agent-memory init --provider=claude
+npx agent-memory init
 ```
 
-## Recommended Team Workflow
+## Recommended Workflow
 
-1. Run `init` once to establish the canonical bundle.
-2. Read `docs/agent-memory/project-map.md` and `docs/agent-memory/current-focus.md`.
-3. Use `update` after structural or workflow changes.
-4. Use `update --validate` when you want a fresh validation baseline in the canonical state.
-5. Use `validate` in CI or routine checks.
+1. Run `init` once.
+2. Use `update` when current repository reality changes.
+3. Use `import add` and `import sync` to ingest external sessions.
+4. Use `recall` to consolidate history into active memory.
+5. Use `query` when you need an answer from memory instead of reading all artifacts manually.
+6. Use `validate` to audit integrity and backlog health.
 
-## What To Review After `init`
+## When To Use `recall`
 
-Even though the bundle is generated from a repository analysis pass, it is still worth reviewing:
+Run `recall` when:
 
-- project summary quality
-- module responsibilities
-- entrypoint descriptions
-- gotchas that should be kept or removed
-- next steps that feel too vague for your team
+- imported sessions have accumulated
+- next steps feel stale
+- gotchas are repetitive
+- `validate` warns about recall backlog
 
-The goal is not to preserve every generated sentence forever. The goal is to keep one trustworthy canonical memory bundle that can be refreshed when reality changes.
+## When To Use `query`
 
-## When This Model Works Best
+Run `query` when:
 
-`agent-memory` is especially useful when:
+- you want a quick answer with citations
+- the information may live in history rather than just the current bundle
+- you want to inspect memory before deciding whether to run `recall`
 
-- the repository is long-lived
-- onboarding is expensive
-- contributors rotate often
-- coding agents are part of daily engineering work
-- “just read the code” is too slow to recover context
+## Runtime Control
+
+If you want to force a specific runtime for synthesis or retrieval:
+
+```bash
+npx agent-memory recall --provider=claude
+```
 
 ## Package Name vs Command Name
 
