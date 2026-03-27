@@ -135,3 +135,5 @@ The formal recall behavior contract now lives in [Phase 2 Recall Rules](./phase2
 The formal conservative dedupe contract now lives in [Phase 2 Dedupe Rules](./phase2-dedupe-rules.md).
 
 The formal status suggestion contract now lives in [Phase 2 Status Rules](./phase2-status-rules.md).
+
+Phase 2 should be considered complete only when the checklist in [Phase 2 Exit Criteria](./phase2-exit-criteria.md) is satisfied.
