@@ -45,7 +45,7 @@ function printHelp(): void {
   console.log("  agent-memory import add <type> <path> [--name <id>]");
   console.log("  agent-memory import sync [<id>|--all] [--provider=auto|codex|claude]");
   console.log("  agent-memory import list");
-  console.log("  agent-memory integrate [claude|codex|all]");
+  console.log("  agent-memory integrate [claude|codex|all] [--dry-run] [--status] [--output=text|json]");
   console.log("  agent-memory mcp");
   console.log("  agent-memory automate start|stop|status|run-once|ensure-running");
   console.log("  agent-memory status [--checkpoint <id>] [--show-diff]");
@@ -472,13 +472,61 @@ async function main(): Promise<void> {
       throw new Error(`Unknown import subcommand: ${subcommand}`);
     }
     case "integrate": {
-      const [target, ...tail] = restArgs;
-      if (tail.length > 0) {
-        throw new Error(`Unexpected extra argument: ${tail[0]}`);
+      let target: IntegrationTarget = "all";
+      let dryRun = false;
+      let status = false;
+      let output: QueryOutputFormat | null = null;
+      const remaining = [...restArgs];
+      while (remaining.length > 0) {
+        const value = remaining.shift();
+        if (!value) {
+          continue;
+        }
+
+        if (value === "--dry-run") {
+          dryRun = true;
+          continue;
+        }
+
+        if (value === "--status") {
+          status = true;
+          continue;
+        }
+
+        if (value.startsWith("--output=")) {
+          output = parseQueryOutputFormat(value.slice("--output=".length));
+          continue;
+        }
+
+        if (value === "--output") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --output");
+          }
+          output = parseQueryOutputFormat(next);
+          continue;
+        }
+
+        if (value.startsWith("--")) {
+          throw new Error(`Unknown argument: ${value}`);
+        }
+
+        if (target !== "all") {
+          throw new Error(`Unexpected extra argument: ${value}`);
+        }
+        target = parseIntegrationTarget(value);
       }
+
+      if (output && !status) {
+        throw new Error("The --output flag is only supported together with --status.");
+      }
+
       const code = await runIntegrate({
         cwd: cwd(),
-        target: target ? parseIntegrationTarget(target) : "all",
+        target,
+        dryRun,
+        status,
+        output,
       });
       if (code !== 0) {
         exit(code);

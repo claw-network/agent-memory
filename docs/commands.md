@@ -226,6 +226,19 @@ First milestone behavior:
 npx agent-memory integrate
 ```
 
+### Preview changes without writing
+
+```bash
+npx agent-memory integrate --dry-run
+```
+
+### Inspect integration status
+
+```bash
+npx agent-memory integrate --status
+npx agent-memory integrate --status --output=json
+```
+
 ### Integrate only Claude Code
 
 ```bash
@@ -245,6 +258,10 @@ First milestone behavior:
 - Codex MCP registration is global but merged safely
 - Claude Code uses project MCP + project skills + `SessionStart` / `Stop` hooks
 - Codex uses MCP + `AGENTS.md` + the local daemon
+- `--dry-run` is read-only and does not write project or user files
+- `--status` is read-only and reports current integration health
+- `--status --output=json` returns machine-readable integration status
+- normal `integrate` may modify user-scope Codex config
 
 Generated or updated files:
 

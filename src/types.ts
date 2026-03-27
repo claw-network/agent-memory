@@ -15,6 +15,15 @@ export type CitationSourceType = "bundle" | "event" | "checkpoint";
 export type SourceSyncStatus = "never" | "passed" | "failed";
 export type AutomationRunStatus = "idle" | "imported" | "recalled" | "recalled_noop" | "failed";
 export type IntegrationTarget = "all" | "claude" | "codex";
+export type IntegrationActionType = "create" | "update" | "unchanged";
+export type IntegrationScope = "project" | "user";
+export type IntegrationComponent =
+  | "claude-mcp"
+  | "claude-hooks"
+  | "claude-skill"
+  | "codex-agents"
+  | "codex-global-mcp";
+export type IntegrationComponentStatus = "present" | "missing" | "managed_mismatch" | "unreadable";
 export type RecallSection =
   | "all"
   | "project"
@@ -285,6 +294,9 @@ export interface AutomationCommandOptions {
 export interface IntegrateCommandOptions {
   cwd: string;
   target: IntegrationTarget;
+  dryRun: boolean;
+  status: boolean;
+  output: QueryOutputFormat | null;
 }
 
 export interface ImportAddOptions {
@@ -532,4 +544,36 @@ export interface AutomationRunResult {
   recall: AutomationRecallSnapshot;
   errors: string[];
   warnings: string[];
+}
+
+export interface IntegrationActionResult {
+  path: string;
+  scope: IntegrationScope;
+  action: IntegrationActionType;
+  component: IntegrationComponent;
+  note: string;
+}
+
+export interface IntegrationStatusItem {
+  status: IntegrationComponentStatus;
+  path: string;
+  scope: IntegrationScope;
+  note: string;
+}
+
+export interface IntegrationStatusReport {
+  target: IntegrationTarget;
+  healthy: boolean;
+  claude: {
+    mcpProjectConfig: IntegrationStatusItem;
+    settingsHooks: IntegrationStatusItem;
+    skills: IntegrationStatusItem;
+  };
+  codex: {
+    agentsGuidance: IntegrationStatusItem;
+    globalMcpConfig: IntegrationStatusItem;
+  };
+  warnings: string[];
+  missingItems: string[];
+  suggestedNextAction: string;
 }

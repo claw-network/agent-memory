@@ -1,12 +1,17 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const os = require("node:os");
 const path = require("node:path");
 
 const {
+  buildClaudeSkillContent,
+  buildIntegrationStatusReport,
   mergeAgentsMd,
   mergeClaudeSettings,
   mergeCodexConfigToml,
   mergeProjectMcpJson,
+  previewIntegrationPlan,
 } = require(path.join(__dirname, "..", "dist", "core", "integration.js"));
 
 test("mergeProjectMcpJson adds and updates only the agent-memory server entry", () => {
@@ -69,4 +74,30 @@ test("mergeCodexConfigToml updates only the agent-memory MCP block", () => {
   assert.match(merged, /\[mcp_servers\.agent-memory\]/);
   assert.match(merged, /command = "npx"/);
   assert.match(merged, /"--no-install", "agent-memory", "mcp"/);
+});
+
+test("previewIntegrationPlan classifies create and unchanged actions", async () => {
+  const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-integrate-plan-"));
+  const first = await previewIntegrationPlan(projectDir, "claude");
+  assert.ok(first.projectConfigWouldBeCreated);
+  assert.ok(first.changes.every((change) => change.action === "create"));
+
+  await fs.writeFile(path.join(projectDir, ".mcp.json"), mergeProjectMcpJson(null), "utf8");
+  await fs.mkdir(path.join(projectDir, ".claude", "skills", "agent-memory"), { recursive: true });
+  await fs.writeFile(path.join(projectDir, ".claude", "settings.json"), mergeClaudeSettings(null), "utf8");
+  await fs.writeFile(path.join(projectDir, ".claude", "skills", "agent-memory", "SKILL.md"), `${buildClaudeSkillContent()}\n`, "utf8");
+
+  const second = await previewIntegrationPlan(projectDir, "claude");
+  assert.ok(second.changes.every((change) => change.action === "unchanged"));
+});
+
+test("buildIntegrationStatusReport detects missing and mismatch states", async () => {
+  const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-integrate-status-"));
+  const missing = await buildIntegrationStatusReport(projectDir, "all");
+  assert.equal(missing.healthy, false);
+  assert.ok(missing.missingItems.includes("claude.mcpProjectConfig"));
+
+  await fs.writeFile(path.join(projectDir, ".mcp.json"), JSON.stringify({ mcpServers: { "agent-memory": { command: "echo", args: [] } } }), "utf8");
+  const mismatch = await buildIntegrationStatusReport(projectDir, "claude");
+  assert.equal(mismatch.claude.mcpProjectConfig.status, "managed_mismatch");
 });

@@ -1398,6 +1398,9 @@ test("integrate claude writes project MCP, hooks, and skill files idempotently",
   const projectDir = await createFixtureProject();
   const first = await runCli(projectDir, ["integrate", "claude"]);
   assert.equal(first.code, 0, first.stderr);
+  assert.match(first.stdout, /Integrated target: claude/);
+  assert.match(first.stdout, /Changes applied:/);
+  assert.match(first.stdout, /CREATE|UPDATE/);
 
   const mcp = JSON.parse(await fs.readFile(path.join(projectDir, ".mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers["agent-memory"].command, "npx");
@@ -1412,6 +1415,7 @@ test("integrate claude writes project MCP, hooks, and skill files idempotently",
   const before = await fs.readFile(path.join(projectDir, ".claude", "settings.json"), "utf8");
   const second = await runCli(projectDir, ["integrate", "claude"]);
   assert.equal(second.code, 0, second.stderr);
+  assert.match(second.stdout, /UNCHANGED/);
   const after = await fs.readFile(path.join(projectDir, ".claude", "settings.json"), "utf8");
   assert.equal(after, before);
 });
@@ -1484,6 +1488,158 @@ test("integrate all combines Claude and Codex integration outputs", async () => 
   await fs.access(path.join(projectDir, ".claude", "skills", "agent-memory", "SKILL.md"));
   await fs.access(path.join(projectDir, "AGENTS.md"));
   await fs.access(path.join(fakeHome, ".codex", "config.toml"));
+});
+
+test("integrate claude --dry-run previews changes without writing files", async () => {
+  const projectDir = await createFixtureProject();
+  const result = await runCli(projectDir, ["integrate", "claude", "--dry-run"]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Dry run: yes/);
+  assert.match(result.stdout, /Planned changes:/);
+  assert.match(result.stdout, /CREATE/);
+
+  await assert.rejects(() => fs.access(path.join(projectDir, ".mcp.json")));
+  await assert.rejects(() => fs.access(path.join(projectDir, ".claude", "settings.json")));
+});
+
+test("integrate codex --dry-run does not write global config or call codex mcp add", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-home-"));
+  const codexLog = path.join(fakeHome, "codex-mcp.log");
+
+  const result = await runCli(projectDir, ["integrate", "codex", "--dry-run"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+    AGENT_MEMORY_FAKE_CODEX_MCP_LOG: codexLog,
+  });
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Dry run: yes/);
+  assert.match(result.stdout, /Planned changes:/);
+
+  await assert.rejects(() => fs.access(path.join(fakeHome, ".codex", "config.toml")));
+  await assert.rejects(() => fs.access(codexLog));
+});
+
+test("integrate --status is read-only and does not call codex mcp add", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-home-"));
+  const codexLog = path.join(fakeHome, "codex-mcp.log");
+
+  const result = await runCli(projectDir, ["integrate", "--status"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+    AGENT_MEMORY_FAKE_CODEX_MCP_LOG: codexLog,
+  });
+  assert.equal(result.code, 0, result.stderr);
+  await assert.rejects(() => fs.access(path.join(projectDir, ".mcp.json")));
+  await assert.rejects(() => fs.access(path.join(fakeHome, ".codex", "config.toml")));
+  await assert.rejects(() => fs.access(codexLog));
+});
+
+test("integrate --status reports missing components before integration and present after integration", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-home-"));
+
+  const before = await runCli(projectDir, ["integrate", "--status"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+  });
+  assert.equal(before.code, 0, before.stderr);
+  assert.match(before.stdout, /Integration Status:/);
+  assert.match(before.stdout, /overall healthy: no/);
+  assert.match(before.stdout, /missing/);
+
+  assert.equal((await runCli(projectDir, ["integrate"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+  })).code, 0);
+
+  const after = await runCli(projectDir, ["integrate", "--status"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+  });
+  assert.equal(after.code, 0, after.stderr);
+  assert.match(after.stdout, /overall healthy: yes/);
+  assert.match(after.stdout, /present/);
+  assert.match(after.stdout, /No action is required\./);
+});
+
+test("integrate --status --output=json returns machine-readable status", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-home-"));
+
+  const result = await runCli(projectDir, ["integrate", "codex", "--status", "--output=json"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+  });
+  assert.equal(result.code, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.target, "codex");
+  assert.equal(typeof parsed.healthy, "boolean");
+  assert.ok(parsed.codex.globalMcpConfig);
+  assert.ok(Array.isArray(parsed.warnings));
+});
+
+test("integrate treats --status as higher priority than --dry-run", async () => {
+  const projectDir = await createFixtureProject();
+  const result = await runCli(projectDir, ["integrate", "claude", "--status", "--dry-run"]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Integration Status:/);
+  assert.doesNotMatch(result.stdout, /Planned changes:/);
+});
+
+test("integrate rejects --output without --status", async () => {
+  const projectDir = await createFixtureProject();
+  const result = await runCli(projectDir, ["integrate", "--output=json"]);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /only supported together with --status/i);
+});
+
+test("integrate status reports managed_mismatch and recover after re-run", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-home-"));
+
+  assert.equal((await runCli(projectDir, ["integrate"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+  })).code, 0);
+
+  await fs.writeFile(
+    path.join(projectDir, ".mcp.json"),
+    JSON.stringify({ mcpServers: { "agent-memory": { command: "echo", args: [] } } }, null, 2),
+    "utf8",
+  );
+
+  const mismatch = await runCli(projectDir, ["integrate", "--status"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+  });
+  assert.equal(mismatch.code, 0, mismatch.stderr);
+  assert.match(mismatch.stdout, /managed_mismatch/);
+  assert.match(mismatch.stdout, /Re-run integrate/);
+
+  const repaired = await runCli(projectDir, ["integrate", "claude"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+  });
+  assert.equal(repaired.code, 0, repaired.stderr);
+
+  const after = await runCli(projectDir, ["integrate", "--status"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+  });
+  assert.equal(after.code, 0, after.stderr);
+  assert.doesNotMatch(after.stdout, /managed_mismatch/);
 });
 
 test("agent-memory mcp supports initialize, tools/list, and tool calls", async () => {
@@ -1775,5 +1931,11 @@ test("integration docs describe integrate, mcp, and ensure-running", async () =>
   assert.match(commands, /automate ensure-running/);
   assert.match(readme, /Claude Code .*SessionStart.*Stop hooks/i);
   assert.match(readme, /Codex integration uses MCP \+ `AGENTS\.md` \+ the local daemon/i);
+  assert.match(readme, /integrate --dry-run/);
+  assert.match(readme, /integrate --status --output=json/);
+  assert.match(commands, /integrate --dry-run/);
+  assert.match(commands, /integrate --status --output=json/);
+  assert.match(readme, /--dry-run.*without writing files/i);
+  assert.match(commands, /--status.*read-only/i);
   assert.match(roadmap, /safe Codex MCP registration via `integrate`/);
 });

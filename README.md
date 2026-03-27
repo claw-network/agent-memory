@@ -177,6 +177,9 @@ The first Phase 4 milestone is a local built-in automation daemon.
 
 ```bash
 npx agent-memory integrate
+npx agent-memory integrate --dry-run
+npx agent-memory integrate --status
+npx agent-memory integrate --status --output=json
 ```
 
 This command is separate from `init`.
@@ -184,6 +187,14 @@ This command is separate from `init`.
 - `init` stays repo-local and never edits global chat tooling config
 - `integrate` writes Claude Code project files
 - `integrate` also registers Codex MCP globally with a safe merge
+
+Install UX notes:
+
+- `--dry-run` previews project/user changes without writing files
+- `--status` is read-only and summarizes Claude/Codex integration health
+- `--status --output=json` returns machine-readable integration status
+- `--dry-run` and `--status` never write project files or global Codex config
+- normal `integrate` may write user-scope Codex config when Codex integration is selected
 
 Generated/updated files include:
 
