@@ -180,6 +180,7 @@ npx agent-memory integrate
 npx agent-memory integrate --dry-run
 npx agent-memory integrate --status
 npx agent-memory integrate --status --output=json
+npx agent-memory integrate --repair
 ```
 
 This command is separate from `init`.
@@ -193,6 +194,7 @@ Install UX notes:
 - `--dry-run` previews project/user changes without writing files
 - `--status` is read-only and summarizes Claude/Codex integration health
 - `--status --output=json` returns machine-readable integration status
+- `--repair` only repairs managed mismatches; it does not create missing components
 - `--dry-run` and `--status` never write project files or global Codex config
 - normal `integrate` may write user-scope Codex config when Codex integration is selected
 

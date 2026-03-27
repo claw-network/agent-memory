@@ -12,6 +12,7 @@ const {
   mergeCodexConfigToml,
   mergeProjectMcpJson,
   previewIntegrationPlan,
+  previewRepairPlan,
 } = require(path.join(__dirname, "..", "dist", "core", "integration.js"));
 
 test("mergeProjectMcpJson adds and updates only the agent-memory server entry", () => {
@@ -100,4 +101,16 @@ test("buildIntegrationStatusReport detects missing and mismatch states", async (
   await fs.writeFile(path.join(projectDir, ".mcp.json"), JSON.stringify({ mcpServers: { "agent-memory": { command: "echo", args: [] } } }), "utf8");
   const mismatch = await buildIntegrationStatusReport(projectDir, "claude");
   assert.equal(mismatch.claude.mcpProjectConfig.status, "managed_mismatch");
+});
+
+test("previewRepairPlan only includes managed_mismatch components", async () => {
+  const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-integrate-repair-"));
+  await fs.writeFile(path.join(projectDir, ".mcp.json"), JSON.stringify({ mcpServers: { "agent-memory": { command: "echo", args: [] } } }), "utf8");
+  await fs.mkdir(path.join(projectDir, ".claude", "skills", "agent-memory"), { recursive: true });
+  await fs.writeFile(path.join(projectDir, ".claude", "settings.json"), mergeClaudeSettings(null), "utf8");
+  await fs.writeFile(path.join(projectDir, ".claude", "skills", "agent-memory", "SKILL.md"), `${buildClaudeSkillContent()}\n`, "utf8");
+
+  const repair = await previewRepairPlan(projectDir, "claude");
+  assert.equal(repair.changes.length, 1);
+  assert.equal(repair.changes[0].component, "claude-mcp");
 });

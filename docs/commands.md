@@ -239,6 +239,13 @@ npx agent-memory integrate --status
 npx agent-memory integrate --status --output=json
 ```
 
+### Repair only managed mismatches
+
+```bash
+npx agent-memory integrate --repair
+npx agent-memory integrate claude --repair --dry-run
+```
+
 ### Integrate only Claude Code
 
 ```bash
@@ -261,6 +268,7 @@ First milestone behavior:
 - `--dry-run` is read-only and does not write project or user files
 - `--status` is read-only and reports current integration health
 - `--status --output=json` returns machine-readable integration status
+- `--repair` only rewrites managed mismatches and does not create missing components
 - normal `integrate` may modify user-scope Codex config
 
 Generated or updated files:

@@ -558,6 +558,41 @@ export async function buildIntegrationStatusReport(rootDir: string, target: Inte
   };
 }
 
+function mismatchComponentsFromStatusReport(report: IntegrationStatusReport, target: IntegrationTarget): Set<IntegrationComponent> {
+  const selected = selectedTargets(target);
+  const components = new Set<IntegrationComponent>();
+
+  if (selected.includes("claude")) {
+    if (report.claude.mcpProjectConfig.status === "managed_mismatch") {
+      components.add("claude-mcp");
+    }
+    if (report.claude.settingsHooks.status === "managed_mismatch") {
+      components.add("claude-hooks");
+    }
+    if (report.claude.skills.status === "managed_mismatch") {
+      components.add("claude-skill");
+    }
+  }
+
+  if (selected.includes("codex")) {
+    if (report.codex.agentsGuidance.status === "managed_mismatch") {
+      components.add("codex-agents");
+    }
+    if (report.codex.globalMcpConfig.status === "managed_mismatch") {
+      components.add("codex-global-mcp");
+    }
+  }
+
+  return components;
+}
+
+function filterChangesByComponents(
+  changes: PlannedIntegrationChange[],
+  components: Set<IntegrationComponent>,
+): PlannedIntegrationChange[] {
+  return changes.filter((change) => components.has(change.component));
+}
+
 export function formatIntegrationStatusReport(report: IntegrationStatusReport): string {
   const lines = [
     "Integration Status:",
@@ -631,6 +666,43 @@ export async function applyIntegrationPlan(rootDir: string, target: IntegrationT
   };
 }
 
+export async function previewRepairPlan(rootDir: string, target: IntegrationTarget): Promise<{
+  changes: IntegrationActionResult[];
+  suggestedNextAction: string;
+}> {
+  const report = await buildIntegrationStatusReport(rootDir, target);
+  const components = mismatchComponentsFromStatusReport(report, target);
+  const plannedChanges = filterChangesByComponents(await runIntegratePlan(rootDir, target), components);
+
+  return {
+    changes: plannedChanges.map(({ nextContent: _nextContent, ...change }) => change),
+    suggestedNextAction: report.suggestedNextAction,
+  };
+}
+
+export async function applyRepairPlan(rootDir: string, target: IntegrationTarget): Promise<{
+  changes: IntegrationActionResult[];
+  globalChangesApplied: boolean;
+  suggestedNextAction: string;
+}> {
+  const report = await buildIntegrationStatusReport(rootDir, target);
+  const components = mismatchComponentsFromStatusReport(report, target);
+  const plannedChanges = filterChangesByComponents(await runIntegratePlan(rootDir, target), components);
+
+  await applyPlannedChangesForRoot(rootDir, plannedChanges);
+
+  const globalCodexChange = plannedChanges.find((change) => change.component === "codex-global-mcp");
+  if (globalCodexChange && globalCodexChange.action !== "unchanged") {
+    void (await tryCodexCliRegistration(rootDir).catch(() => false));
+  }
+
+  return {
+    changes: plannedChanges.map(({ nextContent: _nextContent, ...change }) => change),
+    globalChangesApplied: plannedChanges.some((change) => change.scope === "user" && change.action !== "unchanged"),
+    suggestedNextAction: report.suggestedNextAction,
+  };
+}
+
 export async function previewIntegrationPlan(rootDir: string, target: IntegrationTarget): Promise<{
   changes: IntegrationActionResult[];
   projectConfigWouldBeCreated: boolean;
@@ -642,7 +714,12 @@ export async function previewIntegrationPlan(rootDir: string, target: Integratio
   };
 }
 
-export function formatIntegrationPlan(target: IntegrationTarget, changes: IntegrationActionResult[], dryRun: boolean): string {
+export function formatIntegrationPlan(
+  target: IntegrationTarget,
+  changes: IntegrationActionResult[],
+  dryRun: boolean,
+  mode: "integrate" | "repair" = "integrate",
+): string {
   const grouped = {
     project: changes.filter((change) => change.scope === "project"),
     user: changes.filter((change) => change.scope === "user"),
@@ -650,8 +727,9 @@ export function formatIntegrationPlan(target: IntegrationTarget, changes: Integr
 
   const lines = [
     `Integrated target: ${target}`,
+    `Repair mode: ${mode === "repair" ? "yes" : "no"}`,
     `Dry run: ${dryRun ? "yes" : "no"}`,
-    dryRun ? "Planned changes:" : "Changes applied:",
+    dryRun ? (mode === "repair" ? "Planned repairs:" : "Planned changes:") : (mode === "repair" ? "Repairs applied:" : "Changes applied:"),
   ];
 
   for (const scope of ["project", "user"] as const) {

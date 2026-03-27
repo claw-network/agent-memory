@@ -45,7 +45,7 @@ function printHelp(): void {
   console.log("  agent-memory import add <type> <path> [--name <id>]");
   console.log("  agent-memory import sync [<id>|--all] [--provider=auto|codex|claude]");
   console.log("  agent-memory import list");
-  console.log("  agent-memory integrate [claude|codex|all] [--dry-run] [--status] [--output=text|json]");
+  console.log("  agent-memory integrate [claude|codex|all] [--dry-run] [--status] [--repair] [--output=text|json]");
   console.log("  agent-memory mcp");
   console.log("  agent-memory automate start|stop|status|run-once|ensure-running");
   console.log("  agent-memory status [--checkpoint <id>] [--show-diff]");
@@ -475,6 +475,7 @@ async function main(): Promise<void> {
       let target: IntegrationTarget = "all";
       let dryRun = false;
       let status = false;
+      let repair = false;
       let output: QueryOutputFormat | null = null;
       const remaining = [...restArgs];
       while (remaining.length > 0) {
@@ -490,6 +491,11 @@ async function main(): Promise<void> {
 
         if (value === "--status") {
           status = true;
+          continue;
+        }
+
+        if (value === "--repair") {
+          repair = true;
           continue;
         }
 
@@ -520,12 +526,16 @@ async function main(): Promise<void> {
       if (output && !status) {
         throw new Error("The --output flag is only supported together with --status.");
       }
+      if (repair && status) {
+        throw new Error("The --repair flag cannot be used together with --status.");
+      }
 
       const code = await runIntegrate({
         cwd: cwd(),
         target,
         dryRun,
         status,
+        repair,
         output,
       });
       if (code !== 0) {

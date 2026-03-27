@@ -296,6 +296,7 @@ export interface IntegrateCommandOptions {
   target: IntegrationTarget;
   dryRun: boolean;
   status: boolean;
+  repair: boolean;
   output: QueryOutputFormat | null;
 }
 
