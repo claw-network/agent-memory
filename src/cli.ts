@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 
 import { cwd, exit } from "node:process";
+import {
+  runAutomateDaemon,
+  runAutomateRunOnce,
+  runAutomateStart,
+  runAutomateStatus,
+  runAutomateStop,
+} from "./commands/automate";
 import { runImportAdd, runImportList, runImportSync } from "./commands/import";
 import { runInit } from "./commands/init";
 import { runQuery } from "./commands/query";
@@ -27,6 +34,7 @@ function printHelp(): void {
   console.log("  agent-memory import add <type> <path> [--name <id>]");
   console.log("  agent-memory import sync [<id>|--all] [--provider=auto|codex|claude]");
   console.log("  agent-memory import list");
+  console.log("  agent-memory automate start|stop|status|run-once");
   console.log("  agent-memory status [--checkpoint <id>] [--show-diff]");
   console.log("  agent-memory validate");
   console.log("");
@@ -36,6 +44,7 @@ function printHelp(): void {
   console.log("  recall    Consolidate history into the canonical memory with preview and diff output.");
   console.log("  query     Answer a memory question with citations from bundle, history, or checkpoints.");
   console.log("  import    Manage external session sources and sync them into history events.");
+  console.log("  automate  Run local automation daemon commands for import-sync and recall maintenance.");
   console.log("  status    Show backlog, source health, and checkpoint drift before running recall.");
   console.log("  validate  Audit canonical state, history, checkpoints, projections, and recall health.");
 }
@@ -438,6 +447,52 @@ async function main(): Promise<void> {
       }
 
       throw new Error(`Unknown import subcommand: ${subcommand}`);
+    }
+    case "automate": {
+      const [subcommand] = restArgs;
+      if (!subcommand) {
+        throw new Error("Automate command requires a subcommand: start, stop, status, or run-once.");
+      }
+
+      switch (subcommand) {
+        case "start": {
+          const code = await runAutomateStart({ cwd: cwd() });
+          if (code !== 0) {
+            exit(code);
+          }
+          return;
+        }
+        case "stop": {
+          const code = await runAutomateStop({ cwd: cwd() });
+          if (code !== 0) {
+            exit(code);
+          }
+          return;
+        }
+        case "status": {
+          const code = await runAutomateStatus({ cwd: cwd() });
+          if (code !== 0) {
+            exit(code);
+          }
+          return;
+        }
+        case "run-once": {
+          const code = await runAutomateRunOnce({ cwd: cwd() });
+          if (code !== 0) {
+            exit(code);
+          }
+          return;
+        }
+        case "__daemon": {
+          const code = await runAutomateDaemon({ cwd: cwd() });
+          if (code !== 0) {
+            exit(code);
+          }
+          return;
+        }
+        default:
+          throw new Error(`Unknown automate subcommand: ${subcommand}`);
+      }
     }
     case "validate": {
       const code = await runValidate(cwd());

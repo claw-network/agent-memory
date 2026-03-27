@@ -478,6 +478,14 @@ async function checkpointFiles(projectDir) {
   return await fs.readdir(path.join(projectDir, ".agent-memory", "history", "checkpoints"));
 }
 
+async function readAutomationRun(projectDir) {
+  return JSON.parse(await fs.readFile(path.join(projectDir, ".agent-memory", "automation", "latest-run.json"), "utf8"));
+}
+
+async function readAutomationDaemon(projectDir) {
+  return JSON.parse(await fs.readFile(path.join(projectDir, ".agent-memory", "automation", "daemon.json"), "utf8"));
+}
+
 function providerEnv(paths, extra = {}) {
   return {
     AGENT_MEMORY_CODEX_BIN: paths.codexPath,
@@ -1122,6 +1130,168 @@ test("query uses project-specific template overrides from config", async () => {
   assert.match(result.stdout, /Template: Use TEMPLATE NEXT OVERRIDE\./);
 });
 
+test("automate run-once writes an idle latest-run result when no work is pending", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const state = await readState(projectDir);
+  state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-27T00:00:00.000Z";
+  state.maintenance.recallCursors.all.lastRecalledEventId = "evt-000001";
+  state.maintenance.lastRecalledAt = "2026-03-27T00:00:00.000Z";
+  state.maintenance.lastRecalledEventId = "evt-000001";
+  await writeStateFile(projectDir, state);
+
+  const result = await runCli(projectDir, ["automate", "run-once"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Automation run status: idle/);
+
+  const latestRun = await readAutomationRun(projectDir);
+  assert.equal(latestRun.status, "idle");
+  assert.equal(latestRun.importSync.attempted, false);
+  assert.equal(latestRun.recall.attempted, false);
+});
+
+test("automate run-once performs import sync and aggressive recall even with local file changes", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "DECISION: Use cache layer\nGOTCHA: Reset local cache before query\nNEXT: Write cache playbook\nPATH: src/cache.ts",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  await fs.appendFile(path.join(projectDir, "README.md"), "dirty workspace change\n", "utf8");
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+
+  const result = await runCli(projectDir, ["automate", "run-once"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Automation run status: recalled/);
+
+  const latestRun = await readAutomationRun(projectDir);
+  assert.equal(latestRun.status, "recalled");
+  assert.equal(latestRun.importSync.attempted, true);
+  assert.equal(latestRun.recall.attempted, true);
+  assert.equal(latestRun.recall.applied, true);
+
+  const state = await readState(projectDir);
+  assert.ok(state.bundle.gotchas.some((item) => item.title === "Reset local cache before query"));
+});
+
+test("automate run-once records recalled_noop when unrecalled events do not change durable memory", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "DECISION: Use cache layer\nGOTCHA: Reset local cache before query\nNEXT: Write cache playbook\nDONE: Review the generated state\nPATH: src/cache.ts",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["automate", "run-once"], providerEnv(providers))).code, 0);
+
+  const state = await readState(projectDir);
+  state.maintenance.historyEventCount = 4;
+  state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-27T00:00:00.000Z";
+  state.maintenance.recallCursors.all.lastRecalledEventId = "evt-000003";
+  state.maintenance.lastRecalledAt = "2026-03-27T00:00:00.000Z";
+  state.maintenance.lastRecalledEventId = "evt-000003";
+  await writeStateFile(projectDir, state);
+
+  await fs.appendFile(
+    path.join(projectDir, ".agent-memory", "history", "events.jsonl"),
+    `${JSON.stringify({
+      id: "evt-000004",
+      kind: "tool_run",
+      sourceId: "agent-memory.local",
+      externalItemId: null,
+      createdAt: "2026-03-27T00:00:02.000Z",
+      contentHash: "noop-local-history",
+      summary: "No-op local reminder",
+      signals: {
+        decisions: [],
+        gotchas: [],
+        nextStepHints: [],
+        keyPaths: [],
+        validationObservations: [],
+      },
+      sourceRef: "agent-memory:update",
+    })}\n`,
+    "utf8",
+  );
+
+  const result = await runCli(projectDir, ["automate", "run-once"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Automation run status: recalled_noop/);
+
+  const latestRun = await readAutomationRun(projectDir);
+  assert.equal(latestRun.status, "recalled_noop");
+  assert.equal(latestRun.recall.applied, false);
+  assert.ok(latestRun.recall.noopReason);
+});
+
+test("automate run-once reports failure when import sync cannot reach a source path", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "DECISION: Use cache layer",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const state = await readState(projectDir);
+  state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-27T00:00:00.000Z";
+  state.maintenance.recallCursors.all.lastRecalledEventId = "evt-000001";
+  state.maintenance.lastRecalledAt = "2026-03-27T00:00:00.000Z";
+  state.maintenance.lastRecalledEventId = "evt-000001";
+  await writeStateFile(projectDir, state);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  await fs.rm(claudeImportDir, { recursive: true, force: true });
+
+  const result = await runCli(projectDir, ["automate", "run-once"], providerEnv(providers));
+  assert.equal(result.code, 1);
+
+  const latestRun = await readAutomationRun(projectDir);
+  assert.equal(latestRun.status, "failed");
+  assert.ok(latestRun.warnings.some((warning) => /failure/i.test(warning)));
+});
+
+test("automate daemon lifecycle supports start, status, duplicate start rejection, and stop", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const startResult = await runCli(projectDir, ["automate", "start"], providerEnv(providers));
+  assert.equal(startResult.code, 0, startResult.stderr);
+  assert.match(startResult.stdout, /Automation daemon started/);
+
+  try {
+    const statusResult = await runCli(projectDir, ["automate", "status"], providerEnv(providers));
+    assert.equal(statusResult.code, 0, statusResult.stderr);
+    assert.match(statusResult.stdout, /Automation daemon: running/);
+
+    const daemonState = await readAutomationDaemon(projectDir);
+    assert.equal(typeof daemonState.pid, "number");
+
+    const duplicateStart = await runCli(projectDir, ["automate", "start"], providerEnv(providers));
+    assert.equal(duplicateStart.code, 1);
+    assert.match(duplicateStart.stderr, /already running/i);
+  } finally {
+    const stopResult = await runCli(projectDir, ["automate", "stop"], providerEnv(providers));
+    assert.equal(stopResult.code, 0, stopResult.stderr);
+    assert.match(stopResult.stdout, /Automation daemon (stopped|was not running)/);
+  }
+});
+
 test("status reports backlog, source health, checkpoint drift, and suggested next action", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
@@ -1350,4 +1520,19 @@ test("query docs describe natural-language retrieval, json output, and projectio
   assert.match(readme, /projection docs|projection doc/i);
   assert.match(commands, /projection docs|projection doc/i);
   assert.match(roadmap, /natural-language structured questions|natural language structured questions/i);
+});
+
+test("automation docs describe the local daemon and aggressive recall behavior", async () => {
+  const [readme, commands, roadmap] = await Promise.all([
+    fs.readFile(path.join(REPO_ROOT, "README.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "commands.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "roadmap.md"), "utf8"),
+  ]);
+
+  assert.match(readme, /automate start/);
+  assert.match(commands, /automate run-once/);
+  assert.match(readme, /dirty worktrees do not block automation cycles/i);
+  assert.match(commands, /dirty worktrees do not block the cycle/i);
+  assert.match(roadmap, /local built-in automation daemon/i);
+  assert.match(roadmap, /aggressive auto-apply recall/i);
 });

@@ -1,5 +1,14 @@
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  getAutomationDaemonStatePath,
+  getAutomationLatestRunPath,
+  getAutomationLockPath,
+  isProcessAlive,
+  validateAutomationDaemonStateShape,
+  validateAutomationLockStateShape,
+  validateAutomationRunResultShape,
+} from "./automation-runtime";
 import { ENTRY_VERSION, PROJECTION_VERSION, RECALL_WARN_EVENT_COUNT, VALIDATION_MAX_AGE_DAYS } from "./constants";
 import { parseEntryMarker, parseProjectionMarker, projectState } from "./bundle-projector";
 import {
@@ -575,6 +584,76 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
       code: "validation:freshness",
       message: "The validation baseline is present and still fresh.",
     });
+  }
+
+  const automationDaemonPath = getAutomationDaemonStatePath(rootDir);
+  if (await exists(automationDaemonPath)) {
+    try {
+      const daemonState = validateAutomationDaemonStateShape(JSON.parse(await readFile(automationDaemonPath, "utf8")) as unknown);
+      if (!(await isProcessAlive(daemonState.pid))) {
+        findings.push({
+          status: "warn",
+          code: "automation:daemon:stale",
+          message: `Automation daemon metadata exists, but pid=${daemonState.pid} is not running.`,
+        });
+      } else {
+        findings.push({
+          status: "pass",
+          code: "automation:daemon",
+          message: "Automation daemon metadata is readable.",
+        });
+      }
+    } catch (error) {
+      findings.push({
+        status: "warn",
+        code: "automation:daemon:read",
+        message: `Automation daemon metadata could not be parsed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
+
+  const automationLatestRunPath = getAutomationLatestRunPath(rootDir);
+  if (await exists(automationLatestRunPath)) {
+    try {
+      validateAutomationRunResultShape(JSON.parse(await readFile(automationLatestRunPath, "utf8")) as unknown);
+      findings.push({
+        status: "pass",
+        code: "automation:latest-run",
+        message: "Automation latest-run metadata is readable.",
+      });
+    } catch (error) {
+      findings.push({
+        status: "warn",
+        code: "automation:latest-run:read",
+        message: `Automation latest-run metadata could not be parsed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
+
+  const automationLockPath = getAutomationLockPath(rootDir);
+  if (await exists(automationLockPath)) {
+    try {
+      const lockState = validateAutomationLockStateShape(JSON.parse(await readFile(automationLockPath, "utf8")) as unknown);
+      if (!(await isProcessAlive(lockState.pid))) {
+        findings.push({
+          status: "warn",
+          code: "automation:lock:stale",
+          message: `Automation lock exists, but pid=${lockState.pid} is not running.`,
+        });
+      } else {
+        findings.push({
+          status: "pass",
+          code: "automation:lock",
+          message: "Automation lock metadata is readable.",
+        });
+      }
+    } catch (error) {
+      findings.push({
+        status: "warn",
+        code: "automation:lock:read",
+        message: `Automation lock metadata could not be parsed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   }
 
   return findings;

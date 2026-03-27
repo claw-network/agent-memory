@@ -91,8 +91,9 @@ Focus on making `query` a stronger day-to-day tool:
 
 Focus on reducing maintenance overhead:
 
-- optional scheduled or threshold-based recall suggestions
-- project-level automation settings under `.agent-memory/`
+- first milestone: local built-in automation daemon with `automate start|stop|status|run-once`
+- project-level automation settings under `.agent-memory/config.json`
+- aggressive auto-apply recall for structurally healthy repos, even with dirty worktrees
 - broader importer ecosystem beyond Claude/Codex local history
 - export or report surfaces for CI, dashboards, or external knowledge systems
 - higher-level memory policies such as retention windows or source trust weighting

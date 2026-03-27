@@ -520,6 +520,30 @@ export function validateConfigShape(value: unknown): string[] {
     }
   }
 
+  if (config.automation !== undefined) {
+    const automation = expectRecord(config.automation, "config.automation", errors);
+    if (automation) {
+      if (automation.intervalMinutes !== undefined) {
+        const interval = expectNumber(automation.intervalMinutes, "config.automation.intervalMinutes", errors);
+        if (interval !== null && interval <= 0) {
+          errors.push("config.automation.intervalMinutes must be > 0.");
+        }
+      }
+
+      if (automation.provider !== undefined) {
+        expectEnum(automation.provider, ["auto", "codex", "claude"] as const, "config.automation.provider", errors);
+      }
+
+      if (automation.importSyncBeforeRecall !== undefined && typeof automation.importSyncBeforeRecall !== "boolean") {
+        errors.push("config.automation.importSyncBeforeRecall must be a boolean.");
+      }
+
+      if (automation.autoRecall !== undefined && typeof automation.autoRecall !== "boolean") {
+        errors.push("config.automation.autoRecall must be a boolean.");
+      }
+    }
+  }
+
   return errors;
 }
 

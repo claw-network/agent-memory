@@ -7,6 +7,7 @@
 - `recall`
 - `query`
 - `import`
+- `automate`
 - `validate`
 - `status`
 
@@ -174,6 +175,41 @@ Current built-in source types:
 - malformed sessions are reported as failed items
 - the source keeps a sync status that `validate` can later inspect
 
+## `agent-memory automate`
+
+### Start the local daemon
+
+```bash
+npx agent-memory automate start
+```
+
+### Stop the local daemon
+
+```bash
+npx agent-memory automate stop
+```
+
+### Inspect daemon status
+
+```bash
+npx agent-memory automate status
+```
+
+### Run one automation cycle without daemonizing
+
+```bash
+npx agent-memory automate run-once
+```
+
+First milestone behavior:
+
+- the daemon is local and built in, not cron-backed
+- each cycle can run `import sync --all`
+- each cycle can auto-apply `recall`
+- dirty worktrees do not block the cycle
+- runtime metadata lives in `.agent-memory/automation/`
+- the latest machine-readable run result lives in `.agent-memory/automation/latest-run.json`
+
 ## `agent-memory status`
 
 ```bash
@@ -228,6 +264,7 @@ Important interpretation:
 - `update` = refresh active memory
 - `recall` = consolidate history
 - `query` = retrieve memory
+- `automate` = run local automation for import-sync and recall
 - `import` = ingest external sessions
 - `validate` = audit the system
 - `status` = inspect maintenance state before acting

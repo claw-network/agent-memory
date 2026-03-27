@@ -15,6 +15,7 @@ Durable project memory with history, recall, and query.
 - it lets you consolidate memory with `recall`
 - it lets you retrieve memory with `query`
 - it lets you inspect backlog and checkpoint drift with `status`
+- it can automate import-sync and recall with `automate`
 
 ## Why This Exists
 
@@ -65,6 +66,7 @@ Instead, it:
 5. lets you consolidate history back into memory with `recall`
 6. lets you ask memory questions with `query`
 7. lets you inspect backlog and checkpoint drift with `status`
+8. can run local automation for import-sync and recall with `automate`
 
 If you need to control the runtime used for synthesis, use `--provider=auto|codex|claude`.
 
@@ -150,6 +152,24 @@ Shows:
 - source sync health
 - checkpoint drift summary
 - the next suggested action
+
+### Local automation daemon
+
+```bash
+npx agent-memory automate start
+npx agent-memory automate status
+npx agent-memory automate run-once
+npx agent-memory automate stop
+```
+
+The first Phase 4 milestone is a local built-in automation daemon.
+
+- it runs as a repo-local background process
+- it can run `import sync --all` and `recall --yes` on a schedule
+- it writes runtime state under `.agent-memory/automation/`
+- it records the latest machine-readable run result in `.agent-memory/automation/latest-run.json`
+- it uses aggressive auto-apply recall by default
+- dirty worktrees do not block automation cycles in this first version
 
 ### Audit health
 

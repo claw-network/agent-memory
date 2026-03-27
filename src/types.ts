@@ -13,6 +13,7 @@ export type QueryMode = "answer" | "changes" | "next" | "traps";
 export type QueryOutputFormat = "text" | "json";
 export type CitationSourceType = "bundle" | "event" | "checkpoint";
 export type SourceSyncStatus = "never" | "passed" | "failed";
+export type AutomationRunStatus = "idle" | "imported" | "recalled" | "recalled_noop" | "failed";
 export type RecallSection =
   | "all"
   | "project"
@@ -192,6 +193,12 @@ export interface AgentMemoryConfig {
       };
     };
   };
+  automation: {
+    intervalMinutes: number;
+    provider: ProviderPreference;
+    importSyncBeforeRecall: boolean;
+    autoRecall: boolean;
+  };
 }
 
 export interface AgentMemoryState {
@@ -268,6 +275,10 @@ export interface QueryOptions {
   scope: QueryScope;
   question: string;
   output: QueryOutputFormat | null;
+}
+
+export interface AutomationCommandOptions {
+  cwd: string;
 }
 
 export interface ImportAddOptions {
@@ -478,4 +489,41 @@ export interface AuditFinding {
   status: AuditStatus;
   code: string;
   message: string;
+}
+
+export interface AutomationDaemonState {
+  pid: number;
+  startedAt: string;
+  lastHeartbeatAt: string;
+  intervalMinutes: number;
+  provider: ProviderPreference;
+}
+
+export interface AutomationLockState {
+  pid: number;
+  createdAt: string;
+}
+
+export interface AutomationImportSyncSnapshot {
+  attempted: boolean;
+  results: ImporterSyncResult[];
+}
+
+export interface AutomationRecallSnapshot {
+  attempted: boolean;
+  applied: boolean;
+  rawEventCount: number;
+  groupedItemCount: number;
+  noopReason: string | null;
+}
+
+export interface AutomationRunResult {
+  startedAt: string;
+  finishedAt: string;
+  status: AutomationRunStatus;
+  provider: ProviderPreference;
+  importSync: AutomationImportSyncSnapshot;
+  recall: AutomationRecallSnapshot;
+  errors: string[];
+  warnings: string[];
 }

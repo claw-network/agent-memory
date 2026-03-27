@@ -30,6 +30,12 @@ const DEFAULT_CONFIG: AgentMemoryConfig = {
       },
     },
   },
+  automation: {
+    intervalMinutes: 15,
+    provider: "auto",
+    importSyncBeforeRecall: true,
+    autoRecall: true,
+  },
 };
 
 function configPath(rootDir: string): string {
@@ -94,6 +100,10 @@ export async function readConfig(rootDir: string): Promise<AgentMemoryConfig> {
           ...(config.query?.templates?.traps ?? {}),
         },
       },
+    },
+    automation: {
+      ...DEFAULT_CONFIG.automation,
+      ...(config.automation ?? {}),
     },
   };
 }
