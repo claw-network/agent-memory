@@ -116,6 +116,8 @@ npx agent-memory recall --checkpoint chk-000001
 
 For the full behavioral contract, see [Phase 2 Recall Rules](./phase2-recall-rules.md).
 
+For the conservative merge semantics used during recall, see [Phase 2 Dedupe Rules](./phase2-dedupe-rules.md).
+
 ## `agent-memory query`
 
 ```bash
