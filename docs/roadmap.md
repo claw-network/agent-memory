@@ -129,3 +129,5 @@ Phase 2 is now established in the implementation baseline:
 - `config.json` provides project-level recall defaults and policy controls
 
 Future work should now treat Phase 2 as the maintenance baseline and move incrementally into Phase 3.
+
+The formal recall behavior contract now lives in [Phase 2 Recall Rules](./phase2-recall-rules.md).

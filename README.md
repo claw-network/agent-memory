@@ -180,6 +180,7 @@ This is a destructive model change.
 - [Overview](./docs/overview.md)
 - [Commands](./docs/commands.md)
 - [File Model](./docs/file-model.md)
+- [Phase 2 Recall Rules](./docs/phase2-recall-rules.md)
 - [V1 Boundary And Roadmap](./docs/roadmap.md)
 - [Adoption Guide](./docs/adoption.md)
 - [Contributing](./CONTRIBUTING.md)

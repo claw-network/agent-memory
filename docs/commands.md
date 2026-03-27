@@ -114,6 +114,8 @@ npx agent-memory recall --show-diff
 npx agent-memory recall --checkpoint chk-000001
 ```
 
+For the full behavioral contract, see [Phase 2 Recall Rules](./phase2-recall-rules.md).
+
 ## `agent-memory query`
 
 ```bash
