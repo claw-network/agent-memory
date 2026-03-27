@@ -96,8 +96,6 @@ Reads unrecalled history, proposes a consolidated bundle, shows summary changes 
 
 If no unrecalled events produced durable changes, `recall` exits with a clear no-op message and does not write a checkpoint or tool-run event.
 
-Phase 2 adds:
-
 - `--section=...` to limit consolidation to part of the bundle
 - `--policy=...` to apply policy presets such as imports-only or project-map protection
 - `--show-diff` to expand from summary-first preview into file-level diffs

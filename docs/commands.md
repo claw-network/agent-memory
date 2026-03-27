@@ -103,11 +103,6 @@ Optional source filter:
 
 ```bash
 npx agent-memory recall --source=imports
-```
-
-Phase 2 adds:
-
-```bash
 npx agent-memory recall --section=gotchas
 npx agent-memory recall --policy=project-map-protected
 npx agent-memory recall --show-diff
