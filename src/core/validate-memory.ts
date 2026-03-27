@@ -2,7 +2,8 @@ import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ENTRY_VERSION, PROJECTION_VERSION, RECALL_WARN_EVENT_COUNT, VALIDATION_MAX_AGE_DAYS } from "./constants";
 import { parseEntryMarker, parseProjectionMarker, projectState } from "./bundle-projector";
-import { validateHistoryEventShape, validateHistorySourceShape, validateStateShape } from "./bundle-schema";
+import { validateConfigShape, validateHistoryEventShape, validateHistorySourceShape, validateStateShape } from "./bundle-schema";
+import { getConfigPath, readConfig } from "./config-store";
 import { isSupportedSourceType } from "./import-framework";
 import { getCheckpointsDir, getEventsPath, getSourcesPath, listCheckpointIds, readHistoryEvents, readLatestCheckpoint, readSources } from "./history-store";
 import { computeBundleHash, getStatePath } from "./state-store";
@@ -64,6 +65,8 @@ function estimateQueryCoverage(state: AgentMemoryState, historyEventCount: numbe
 export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
   const findings: AuditFinding[] = [];
   const statePath = getStatePath(rootDir);
+  const configPath = getConfigPath(rootDir);
+  let configuredBacklogThreshold = RECALL_WARN_EVENT_COUNT;
 
   if (!(await exists(statePath))) {
     findings.push({
@@ -116,6 +119,49 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
       code: "state:bundle-hash",
       message: "state.json bundleHash matches the stored bundle content.",
     });
+  }
+
+  if (!(await exists(configPath))) {
+    findings.push({
+      status: "fail",
+      code: "config:missing",
+      message: ".agent-memory/config.json is missing.",
+    });
+  } else {
+    const rawConfig = await readFile(configPath, "utf8");
+    let parsedConfig: unknown;
+    try {
+      parsedConfig = JSON.parse(rawConfig) as unknown;
+    } catch (error) {
+      findings.push({
+        status: "fail",
+        code: "config:json",
+        message: `config.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      return findings;
+    }
+
+    const configErrors = validateConfigShape(parsedConfig);
+    if (configErrors.length > 0) {
+      findings.push({
+        status: "fail",
+        code: "config:schema",
+        message: `config.json failed validation: ${configErrors.join(" ")}`,
+      });
+      return findings;
+    }
+
+    findings.push({
+      status: "pass",
+      code: "config:schema",
+      message: "config.json is valid.",
+    });
+
+    try {
+      configuredBacklogThreshold = (await readConfig(rootDir)).recall.backlogWarnThreshold;
+    } catch {
+      configuredBacklogThreshold = RECALL_WARN_EVENT_COUNT;
+    }
   }
 
   const eventsPath = getEventsPath(rootDir);
@@ -187,7 +233,7 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
     }
 
     const unrecalledEvents = events.filter((event) => parseEventOrdinal(event.id) > parseEventOrdinal(state.maintenance.lastRecalledEventId ?? "evt-000000"));
-    if (unrecalledEvents.length > RECALL_WARN_EVENT_COUNT) {
+    if (unrecalledEvents.length > configuredBacklogThreshold) {
       findings.push({
         status: "warn",
         code: "recall:backlog",

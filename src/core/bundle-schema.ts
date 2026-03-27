@@ -1,5 +1,6 @@
 import { STATE_SCHEMA_VERSION } from "./constants";
 import type {
+  AgentMemoryConfig,
   AgentMemoryBundle,
   AgentMemoryState,
   HistoryEvent,
@@ -426,12 +427,54 @@ export function validateStateShape(value: unknown): string[] {
   return errors;
 }
 
+export function validateConfigShape(value: unknown): string[] {
+  const errors: string[] = [];
+  const config = expectRecord(value, "config", errors);
+  if (!config) {
+    return errors;
+  }
+
+  const recall = expectRecord(config.recall, "config.recall", errors);
+  if (!recall) {
+    return errors;
+  }
+
+  expectEnum(
+    recall.defaultSection,
+    ["all", "project", "project-map", "current-focus", "gotchas", "next-steps", "validation-commands"] as const,
+    "config.recall.defaultSection",
+    errors,
+  );
+  expectEnum(recall.defaultSource, ["all", "local", "imports"] as const, "config.recall.defaultSource", errors);
+  expectEnum(
+    recall.policy,
+    ["balanced", "imports-only", "local-only", "project-map-protected"] as const,
+    "config.recall.policy",
+    errors,
+  );
+  const threshold = expectNumber(recall.backlogWarnThreshold, "config.recall.backlogWarnThreshold", errors);
+  if (threshold !== null && threshold < 0) {
+    errors.push("config.recall.backlogWarnThreshold must be >= 0.");
+  }
+
+  const preview = expectRecord(recall.preview, "config.recall.preview", errors);
+  if (preview && typeof preview.showDiffByDefault !== "boolean") {
+    errors.push("config.recall.preview.showDiffByDefault must be a boolean.");
+  }
+
+  return errors;
+}
+
 export function asAgentMemoryBundle(value: unknown): AgentMemoryBundle | null {
   return validateBundleShape(value).length === 0 ? (value as AgentMemoryBundle) : null;
 }
 
 export function asAgentMemoryState(value: unknown): AgentMemoryState | null {
   return validateStateShape(value).length === 0 ? (value as AgentMemoryState) : null;
+}
+
+export function asAgentMemoryConfig(value: unknown): AgentMemoryConfig | null {
+  return validateConfigShape(value).length === 0 ? (value as AgentMemoryConfig) : null;
 }
 
 export function asQueryResult(value: unknown): QueryResult | null {

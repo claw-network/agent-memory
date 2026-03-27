@@ -5,9 +5,10 @@ import { runImportAdd, runImportList, runImportSync } from "./commands/import";
 import { runInit } from "./commands/init";
 import { runQuery } from "./commands/query";
 import { runRecall } from "./commands/recall";
+import { runStatus } from "./commands/status";
 import { runUpdate } from "./commands/update";
 import { runValidate } from "./commands/validate";
-import type { ProviderPreference, QueryScope, RecallSourceScope } from "./types";
+import type { ProviderPreference, QueryScope, RecallPolicy, RecallSection, RecallSourceScope } from "./types";
 
 interface CommonArgs {
   yes: boolean;
@@ -26,6 +27,7 @@ function printHelp(): void {
   console.log("  agent-memory import add <type> <path> [--name <id>]");
   console.log("  agent-memory import sync [<id>|--all] [--provider=auto|codex|claude]");
   console.log("  agent-memory import list");
+  console.log("  agent-memory status [--checkpoint <id>] [--show-diff]");
   console.log("  agent-memory validate");
   console.log("");
   console.log("Commands:");
@@ -34,6 +36,7 @@ function printHelp(): void {
   console.log("  recall    Consolidate history into the canonical memory with preview and diff output.");
   console.log("  query     Answer a memory question with citations from bundle, history, or checkpoints.");
   console.log("  import    Manage external session sources and sync them into history events.");
+  console.log("  status    Show backlog, source health, and checkpoint drift before running recall.");
   console.log("  validate  Audit canonical state, history, checkpoints, projections, and recall health.");
 }
 
@@ -51,6 +54,30 @@ function parseRecallSource(value: string): RecallSourceScope {
   }
 
   throw new Error(`Unknown recall source: ${value}`);
+}
+
+function parseRecallSection(value: string): RecallSection {
+  if (
+    value === "all" ||
+    value === "project" ||
+    value === "project-map" ||
+    value === "current-focus" ||
+    value === "gotchas" ||
+    value === "next-steps" ||
+    value === "validation-commands"
+  ) {
+    return value;
+  }
+
+  throw new Error(`Unknown recall section: ${value}`);
+}
+
+function parseRecallPolicy(value: string): RecallPolicy {
+  if (value === "balanced" || value === "imports-only" || value === "local-only" || value === "project-map-protected") {
+    return value;
+  }
+
+  throw new Error(`Unknown recall policy: ${value}`);
 }
 
 function parseQueryScope(value: string): QueryScope {
@@ -141,6 +168,10 @@ async function main(): Promise<void> {
     case "recall": {
       const { common, rest } = parseCommonFlags(restArgs);
       let source: RecallSourceScope = "all";
+      let section: RecallSection = "all";
+      let policy: RecallPolicy | null = null;
+      let showDiff = false;
+      let checkpointId: string | null = null;
       const remaining = [...rest];
       while (remaining.length > 0) {
         const value = remaining.shift();
@@ -162,6 +193,53 @@ async function main(): Promise<void> {
           continue;
         }
 
+        if (value.startsWith("--section=")) {
+          section = parseRecallSection(value.slice("--section=".length));
+          continue;
+        }
+
+        if (value === "--section") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --section");
+          }
+          section = parseRecallSection(next);
+          continue;
+        }
+
+        if (value.startsWith("--policy=")) {
+          policy = parseRecallPolicy(value.slice("--policy=".length));
+          continue;
+        }
+
+        if (value === "--policy") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --policy");
+          }
+          policy = parseRecallPolicy(next);
+          continue;
+        }
+
+        if (value === "--show-diff") {
+          showDiff = true;
+          continue;
+        }
+
+        if (value.startsWith("--checkpoint=")) {
+          checkpointId = value.slice("--checkpoint=".length);
+          continue;
+        }
+
+        if (value === "--checkpoint") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --checkpoint");
+          }
+          checkpointId = next;
+          continue;
+        }
+
         throw new Error(`Unknown argument: ${value}`);
       }
 
@@ -170,6 +248,10 @@ async function main(): Promise<void> {
         yes: common.yes,
         provider: common.provider,
         source,
+        section,
+        policy,
+        showDiff,
+        checkpointId,
       });
       if (code !== 0) {
         exit(code);
@@ -335,6 +417,40 @@ async function main(): Promise<void> {
     }
     case "validate": {
       const code = await runValidate(cwd());
+      if (code !== 0) {
+        exit(code);
+      }
+      return;
+    }
+    case "status": {
+      let showDiff = false;
+      let checkpointId: string | null = null;
+      const remaining = [...restArgs];
+      while (remaining.length > 0) {
+        const value = remaining.shift();
+        if (!value) {
+          continue;
+        }
+        if (value === "--show-diff") {
+          showDiff = true;
+          continue;
+        }
+        if (value.startsWith("--checkpoint=")) {
+          checkpointId = value.slice("--checkpoint=".length);
+          continue;
+        }
+        if (value === "--checkpoint") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --checkpoint");
+          }
+          checkpointId = next;
+          continue;
+        }
+        throw new Error(`Unknown argument: ${value}`);
+      }
+
+      const code = await runStatus({ cwd: cwd(), checkpointId, showDiff });
       if (code !== 0) {
         exit(code);
       }

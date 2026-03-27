@@ -1,5 +1,6 @@
 import { rm } from "node:fs/promises";
 import { createCheckpoint } from "./checkpoint-store";
+import { getDefaultConfig, writeConfig } from "./config-store";
 import { projectState } from "./bundle-projector";
 import { appendHistoryEvents, ensureHistoryLayout, nextCheckpointId, nextEventId, readHistoryEvents, readSources, writeSources } from "./history-store";
 import { cloneMaintenance, createToolRunEvent, summarizeRecallDiff } from "./history-event-builders";
@@ -21,6 +22,7 @@ export async function resetAgentMemoryRoot(rootDir: string): Promise<void> {
 export async function bootstrapHistoryFiles(rootDir: string): Promise<void> {
   await ensureHistoryLayout(rootDir);
   await writeSources(rootDir, []);
+  await writeConfig(rootDir, getDefaultConfig());
 }
 
 export async function persistCanonicalState(input: {

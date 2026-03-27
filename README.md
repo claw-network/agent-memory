@@ -10,9 +10,11 @@ Durable project memory with history, recall, and query.
 
 - it stores the current canonical memory in `/.agent-memory/state.json`
 - it records durable history in `/.agent-memory/history/`
+- it supports configurable recall policies in `/.agent-memory/config.json`
 - it projects the current memory into `docs/agent-memory/`
 - it lets you consolidate memory with `recall`
 - it lets you retrieve memory with `query`
+- it lets you inspect backlog and checkpoint drift with `status`
 
 ## Why This Exists
 
@@ -37,6 +39,8 @@ The system now has four persistent layers:
   Bundle checkpoints written after `init`, `update`, and `recall`
 - `/.agent-memory/sources.json`
   Registered external history sources
+- `/.agent-memory/config.json`
+  Recall defaults, policy, and backlog thresholds
 
 Readable projections still live in:
 
@@ -60,6 +64,7 @@ Instead, it:
 4. projects the active bundle into repository docs
 5. lets you consolidate history back into memory with `recall`
 6. lets you ask memory questions with `query`
+7. lets you inspect backlog and checkpoint drift with `status`
 
 If you need to control the runtime used for synthesis, use `--provider=auto|codex|claude`.
 
@@ -91,6 +96,12 @@ Reads unrecalled history, proposes a consolidated bundle, shows summary changes 
 
 If no unrecalled events produced durable changes, `recall` exits with a clear no-op message and does not write a checkpoint or tool-run event.
 
+Phase 2 adds:
+
+- `--section=...` to limit consolidation to part of the bundle
+- `--policy=...` to apply policy presets such as imports-only or project-map protection
+- `--show-diff` to expand from summary-first preview into file-level diffs
+
 ### Query memory
 
 ```bash
@@ -98,6 +109,8 @@ npx agent-memory query "how does caching work?"
 ```
 
 Returns a short answer plus citations from bundle sections, history events, and checkpoints.
+
+If current memory cannot support a confident answer, `query` now returns an explicit evidence-insufficient response instead of bluffing.
 
 ### Import external sessions
 
@@ -113,6 +126,22 @@ Registers external history sources and normalizes imported sessions into durable
 - imported sessions become history events
 - duplicate sessions are skipped
 - broken session files are reported as failures without aborting the whole source
+
+Each source also records sync status, last imported count, and the last sync error when applicable.
+
+### Inspect memory status
+
+```bash
+npx agent-memory status
+```
+
+Shows:
+
+- state and latest checkpoint id
+- unrecalled backlog across all/local/imported history
+- source sync health
+- checkpoint drift summary
+- the next suggested action
 
 ### Audit health
 
@@ -130,6 +159,8 @@ Common cases:
   The source is still registered, but one or more session files could not be parsed or normalized. Run `agent-memory validate` to see whether this is now a warning condition.
 - `recall` says `Nothing to recall`
   Either there are no unrecalled events for the selected scope, or consolidation produced no durable bundle changes.
+- `status` suggests `recall`
+  The backlog is above the configured threshold or the checkpoint drift summary suggests stale active memory.
 - `query` says there is not enough evidence
   The current bundle, history, and checkpoints do not support a confident answer yet. Import more history or run `recall` before asking again.
 - `validate` warns about recall backlog

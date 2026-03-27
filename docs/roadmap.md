@@ -117,3 +117,15 @@ Phase 1 exit criteria are currently met in the implementation baseline:
 - validate distinguishes structural failures from maintenance warnings
 
 Future work should now treat Phase 1 as the stabilization baseline and move incrementally into Phase 2.
+
+## Phase 2 Status
+
+Phase 2 is now established in the implementation baseline:
+
+- recall supports section-aware consolidation across the full bundle
+- conservative deduplication is applied before state write
+- checkpoint comparison powers summary-first recall previews
+- `status` provides backlog, source health, checkpoint drift, and suggested next action
+- `config.json` provides project-level recall defaults and policy controls
+
+Future work should now treat Phase 2 as the maintenance baseline and move incrementally into Phase 3.

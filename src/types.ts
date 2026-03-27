@@ -11,6 +11,15 @@ export type RecallSourceScope = "all" | "local" | "imports";
 export type QueryScope = "state" | "history" | "all";
 export type CitationSourceType = "bundle" | "event" | "checkpoint";
 export type SourceSyncStatus = "never" | "passed" | "failed";
+export type RecallSection =
+  | "all"
+  | "project"
+  | "project-map"
+  | "current-focus"
+  | "gotchas"
+  | "next-steps"
+  | "validation-commands";
+export type RecallPolicy = "balanced" | "imports-only" | "local-only" | "project-map-protected";
 
 export interface WorkspaceModule {
   name: string;
@@ -154,6 +163,18 @@ export interface MaintenanceMetadata {
   };
 }
 
+export interface AgentMemoryConfig {
+  recall: {
+    defaultSection: RecallSection;
+    defaultSource: RecallSourceScope;
+    policy: RecallPolicy;
+    backlogWarnThreshold: number;
+    preview: {
+      showDiffByDefault: boolean;
+    };
+  };
+}
+
 export interface AgentMemoryState {
   schemaVersion: number;
   generatorVersion: string;
@@ -216,6 +237,10 @@ export interface RecallOptions {
   yes: boolean;
   provider: ProviderPreference;
   source: RecallSourceScope;
+  section: RecallSection;
+  policy: RecallPolicy | null;
+  showDiff: boolean;
+  checkpointId: string | null;
 }
 
 export interface QueryOptions {
@@ -318,8 +343,12 @@ export interface RecallDiffSummary {
   removedGotchas: string[];
   addedNextSteps: string[];
   removedNextSteps: string[];
+  mergedGotchas: string[];
+  mergedNextSteps: string[];
   currentFocusChanged: boolean;
   validationChanged: boolean;
+  selectedSection: RecallSection;
+  protectedSections: string[];
 }
 
 export interface RecallCandidate {
@@ -327,6 +356,26 @@ export interface RecallCandidate {
   summary: RecallDiffSummary;
   fileDiffs: FileDiff[];
   noopReason: string | null;
+}
+
+export interface DeduplicationResult {
+  bundle: AgentMemoryBundle;
+  mergedGotchas: string[];
+  mergedNextSteps: string[];
+}
+
+export interface CheckpointComparisonSummary {
+  checkpointId: string | null;
+  changedSections: string[];
+  addedGotchas: string[];
+  removedGotchas: string[];
+  addedNextSteps: string[];
+  removedNextSteps: string[];
+  mergedGotchas: string[];
+  mergedNextSteps: string[];
+  currentFocusChanged: boolean;
+  validationChanged: boolean;
+  fileDiffs: FileDiff[];
 }
 
 export interface Citation {
@@ -349,6 +398,29 @@ export interface QueryShortlistItem {
   summary: string;
   content: string;
   createdAt: string | null;
+}
+
+export interface StatusReport {
+  state: {
+    schemaVersion: number;
+    bundleHash: string;
+    latestCheckpointId: string | null;
+  };
+  history: {
+    totalEvents: number;
+    unrecalledAll: number;
+    unrecalledLocal: number;
+    unrecalledImports: number;
+  };
+  sources: Array<{
+    id: string;
+    status: SourceSyncStatus;
+    lastSyncedAt: string | null;
+    lastImportedCount: number;
+    lastSyncError: string | null;
+  }>;
+  checkpoint: CheckpointComparisonSummary | null;
+  suggestedNextAction: string;
 }
 
 export interface AuditFinding {

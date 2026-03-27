@@ -453,6 +453,10 @@ async function readSources(projectDir) {
   return JSON.parse(await fs.readFile(path.join(projectDir, ".agent-memory", "sources.json"), "utf8"));
 }
 
+async function readConfig(projectDir) {
+  return JSON.parse(await fs.readFile(path.join(projectDir, ".agent-memory", "config.json"), "utf8"));
+}
+
 async function checkpointFiles(projectDir) {
   return await fs.readdir(path.join(projectDir, ".agent-memory", "history", "checkpoints"));
 }
@@ -541,6 +545,10 @@ test("prepareRecall previews changes without writing files", async () => {
       yes: false,
       provider: "codex",
       source: "imports",
+      section: "all",
+      policy: null,
+      showDiff: false,
+      checkpointId: null,
     });
     assert.ok(prepared.candidate.fileDiffs.length > 0);
     assert.ok(prepared.candidate.summary.addedGotchas.includes("Reset local cache before query"));
@@ -703,6 +711,81 @@ test("recall prints a no-op message when nothing new needs consolidation", async
   assert.deepEqual(await checkpointFiles(projectDir), checkpointsBefore);
 });
 
+test("recall supports section-aware updates and protects unselected sections", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "DECISION: Use cache layer\nGOTCHA: Reset local cache before query\nNEXT: Write cache playbook\nDONE: Review the generated state\nPATH: src/cache.ts\nVALIDATION: cache validation is flaky",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const beforeState = await readState(projectDir);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const result = await runCli(
+    projectDir,
+    ["recall", "--yes", "--provider=codex", "--source=imports", "--section=gotchas"],
+    providerEnv(providers),
+  );
+  assert.equal(result.code, 0, result.stderr);
+
+  const afterState = await readState(projectDir);
+  assert.ok(afterState.bundle.gotchas.some((item) => item.title === "Reset local cache before query"));
+  assert.deepEqual(afterState.bundle.nextSteps, beforeState.bundle.nextSteps);
+  assert.deepEqual(afterState.bundle.projectMap, beforeState.bundle.projectMap);
+});
+
+test("project-map-protected policy prevents project-map changes during recall all", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "DECISION: Replace project map\nNEXT: Rewrite architecture map\nPATH: src/cache.ts",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const config = await readConfig(projectDir);
+  config.recall.policy = "project-map-protected";
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  const beforeState = await readState(projectDir);
+
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["recall", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const afterState = await readState(projectDir);
+  assert.deepEqual(afterState.bundle.projectMap, beforeState.bundle.projectMap);
+});
+
+test("recall summary reports conservative dedupe merges", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "GOTCHA: Reset local cache before query\nNEXT: Write cache playbook\nPATH: src/cache.ts",
+    },
+    {
+      text: "GOTCHA: Reset local cache before any query\nNEXT: Write cache playbook docs\nPATH: src/cache.ts",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const result = await runCli(projectDir, ["recall", "--provider=codex", "--show-diff"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Merged gotchas:/);
+  assert.match(result.stdout, /Merged next steps:/);
+});
+
 test("validate passes on a healthy initialized project with validation baseline", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
@@ -772,6 +855,44 @@ test("query citations use stable section and checkpoint identifiers", async () =
   assert.match(result.stdout, /bundle\.currentFocus|bundle\.project|checkpoint:chk-/);
 });
 
+test("status reports backlog, source health, checkpoint drift, and suggested next action", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "DECISION: Use cache layer\nNEXT: Add cache troubleshooting",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  const result = await runCli(projectDir, ["status"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /State:/);
+  assert.match(result.stdout, /History:/);
+  assert.match(result.stdout, /Sources:/);
+  assert.match(result.stdout, /Checkpoint Drift:/);
+  assert.match(result.stdout, /Suggested Next Action:/);
+});
+
+test("status can show diff against a specific checkpoint", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const checkpoints = await checkpointFiles(projectDir);
+  const firstCheckpointId = checkpoints[0].replace(/\.json$/, "");
+  const result = await runCli(projectDir, ["status", "--checkpoint", firstCheckpointId, "--show-diff"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /checkpoint: chk-000001|checkpoint: chk-00000/);
+  assert.match(result.stdout, /File Diffs:/);
+});
+
 test("validate fails when the latest checkpoint is missing", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
@@ -804,6 +925,22 @@ test("validate warns when recall backlog grows too large", async () => {
   const result = await runCli(projectDir, ["validate"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /WARN recall:backlog/);
+});
+
+test("validate fails on an invalid config file", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+  await fs.writeFile(
+    path.join(projectDir, ".agent-memory", "config.json"),
+    JSON.stringify({ recall: { defaultSection: "unknown" } }, null, 2),
+    "utf8",
+  );
+  const result = await runCli(projectDir, ["validate"], providerEnv(providers));
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /config:schema/);
 });
 
 test("recall, query, and import sync reject an old schema state", async () => {

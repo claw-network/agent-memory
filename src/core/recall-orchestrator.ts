@@ -1,22 +1,37 @@
 import { readFile } from "node:fs/promises";
 import { asAgentMemoryBundle, bundleOutputSchema, validateBundleShape } from "./bundle-schema";
 import { persistCanonicalState } from "./canonical-persistence";
+import { compareStateWithCheckpoint } from "./checkpoint-comparison";
+import { readConfig } from "./config-store";
 import { collectContext } from "./context-collector";
+import { dedupeBundle } from "./dedupe-engine";
 import { renderUnifiedDiff } from "./diff-renderer";
-import { eventsAfterCursor, filterEventsBySource, nextCheckpointId, readHistoryEvents, readSources } from "./history-store";
+import {
+  eventsAfterCursor,
+  filterEventsBySource,
+  nextCheckpointId,
+  readHistoryEvents,
+  readLatestCheckpoint,
+  readSources,
+} from "./history-store";
 import { updateRecallMaintenance, cloneMaintenance } from "./history-event-builders";
 import { planProjectionWrites, renderEntryContent } from "./merge-files";
 import { buildRecallPrompt } from "./prompt-builder";
 import { invokeProvider } from "./provider-adapters";
 import { buildState, getStatePath, stableStringify } from "./state-store";
 import { projectState } from "./bundle-projector";
-import { readLatestCheckpoint } from "./history-store";
 import type {
+  AgentMemoryBundle,
+  AgentMemoryConfig,
   AgentMemoryState,
+  CheckpointComparisonSummary,
   FileDiff,
   RecallCandidate,
   RecallDiffSummary,
   RecallOptions,
+  RecallPolicy,
+  RecallSection,
+  RecallSourceScope,
 } from "../types";
 
 interface PreparedRecall {
@@ -24,6 +39,65 @@ interface PreparedRecall {
   candidate: RecallCandidate;
   plannedChanges: Awaited<ReturnType<typeof planProjectionWrites>>;
   unrecalledCount: number;
+  checkpointComparison: CheckpointComparisonSummary | null;
+}
+
+function resolveRecallSource(options: RecallOptions, config: AgentMemoryConfig): RecallSourceScope {
+  if (options.source !== "all") {
+    return options.source;
+  }
+
+  if (options.policy === "imports-only") {
+    return "imports";
+  }
+  if (options.policy === "local-only") {
+    return "local";
+  }
+
+  return config.recall.defaultSource;
+}
+
+function resolveRecallSection(options: RecallOptions, config: AgentMemoryConfig): RecallSection {
+  return options.section === "all" ? config.recall.defaultSection : options.section;
+}
+
+function resolveRecallPolicy(options: RecallOptions, config: AgentMemoryConfig): RecallPolicy {
+  return options.policy ?? config.recall.policy;
+}
+
+function protectedSectionsForPolicy(policy: RecallPolicy, selectedSection: RecallSection): string[] {
+  if (policy === "project-map-protected" && selectedSection !== "project-map") {
+    return ["project-map"];
+  }
+
+  return [];
+}
+
+function mergeBundleSection(
+  current: AgentMemoryBundle,
+  candidate: AgentMemoryBundle,
+  selectedSection: RecallSection,
+  protectedSections: string[],
+): AgentMemoryBundle {
+  const protectProjectMap = protectedSections.includes("project-map");
+  const merged: AgentMemoryBundle = {
+    ...current,
+    project: selectedSection === "all" || selectedSection === "project" ? candidate.project : current.project,
+    projectMap:
+      selectedSection === "project-map" || (selectedSection === "all" && !protectProjectMap)
+        ? candidate.projectMap
+        : current.projectMap,
+    currentFocus:
+      selectedSection === "all" || selectedSection === "current-focus" ? candidate.currentFocus : current.currentFocus,
+    gotchas: selectedSection === "all" || selectedSection === "gotchas" ? candidate.gotchas : current.gotchas,
+    nextSteps: selectedSection === "all" || selectedSection === "next-steps" ? candidate.nextSteps : current.nextSteps,
+    validationCommands:
+      selectedSection === "all" || selectedSection === "validation-commands"
+        ? candidate.validationCommands
+        : current.validationCommands,
+  };
+
+  return merged;
 }
 
 async function readIfExists(path: string): Promise<string> {
@@ -47,7 +121,13 @@ function diffTitles(before: string[], after: string[]): { added: string[]; remov
   };
 }
 
-function buildRecallSummary(before: AgentMemoryState["bundle"], after: AgentMemoryState["bundle"]): RecallDiffSummary {
+function buildRecallSummary(
+  before: AgentMemoryBundle,
+  after: AgentMemoryBundle,
+  selectedSection: RecallSection,
+  protectedSections: string[],
+  dedupeResult: { mergedGotchas: string[]; mergedNextSteps: string[] },
+): RecallDiffSummary {
   const changedSections: string[] = [];
   const gotchasDiff = diffTitles(titles(before.gotchas), titles(after.gotchas));
   const nextStepsDiff = diffTitles(titles(before.nextSteps), titles(after.nextSteps));
@@ -64,10 +144,10 @@ function buildRecallSummary(before: AgentMemoryState["bundle"], after: AgentMemo
   if (currentFocusChanged) {
     changedSections.push("current-focus");
   }
-  if (gotchasDiff.added.length > 0 || gotchasDiff.removed.length > 0) {
+  if (gotchasDiff.added.length > 0 || gotchasDiff.removed.length > 0 || dedupeResult.mergedGotchas.length > 0) {
     changedSections.push("gotchas");
   }
-  if (nextStepsDiff.added.length > 0 || nextStepsDiff.removed.length > 0) {
+  if (nextStepsDiff.added.length > 0 || nextStepsDiff.removed.length > 0 || dedupeResult.mergedNextSteps.length > 0) {
     changedSections.push("next-steps");
   }
   if (stableStringify(before.validationCommands) !== stableStringify(after.validationCommands)) {
@@ -80,8 +160,12 @@ function buildRecallSummary(before: AgentMemoryState["bundle"], after: AgentMemo
     removedGotchas: gotchasDiff.removed,
     addedNextSteps: nextStepsDiff.added,
     removedNextSteps: nextStepsDiff.removed,
+    mergedGotchas: dedupeResult.mergedGotchas,
+    mergedNextSteps: dedupeResult.mergedNextSteps,
     currentFocusChanged,
     validationChanged,
+    selectedSection,
+    protectedSections,
   };
 }
 
@@ -89,10 +173,7 @@ function lastEventId(events: { id: string }[], fallback: string | null): string 
   return events.length > 0 ? events[events.length - 1].id : fallback;
 }
 
-async function buildFileDiffs(
-  rootDir: string,
-  state: AgentMemoryState,
-): Promise<FileDiff[]> {
+async function buildFileDiffs(rootDir: string, state: AgentMemoryState): Promise<FileDiff[]> {
   const diffs: FileDiff[] = [];
   const projection = projectState(rootDir, state);
   const stateDiff = renderUnifiedDiff(
@@ -130,30 +211,42 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
     throw new Error("No canonical state exists yet. Run `agent-memory init` before `agent-memory recall`.");
   }
 
+  const config = await readConfig(options.cwd);
+  const effectiveSource = resolveRecallSource(options, config);
+  const selectedSection = resolveRecallSection(options, config);
+  const policy = resolveRecallPolicy(options, config);
+  const protectedSections = protectedSectionsForPolicy(policy, selectedSection);
+
   const events = await readHistoryEvents(options.cwd);
   const sources = await readSources(options.cwd);
-  const checkpoint = await readLatestCheckpoint(options.cwd, currentState.maintenance.latestCheckpointId);
-  const cursor = currentState.maintenance.recallCursors[options.source];
-  const unrecalledEvents = filterEventsBySource(eventsAfterCursor(events, cursor.lastRecalledEventId), options.source);
+  const checkpoint =
+    options.checkpointId !== null
+      ? await readLatestCheckpoint(options.cwd, options.checkpointId)
+      : await readLatestCheckpoint(options.cwd, currentState.maintenance.latestCheckpointId);
+  const cursor = currentState.maintenance.recallCursors[effectiveSource];
+  const unrecalledEvents = filterEventsBySource(eventsAfterCursor(events, cursor.lastRecalledEventId), effectiveSource);
 
   if (unrecalledEvents.length === 0) {
     return {
       currentState,
       candidate: {
         state: currentState,
-        summary: buildRecallSummary(currentState.bundle, currentState.bundle),
+        summary: buildRecallSummary(currentState.bundle, currentState.bundle, selectedSection, protectedSections, {
+          mergedGotchas: [],
+          mergedNextSteps: [],
+        }),
         fileDiffs: [],
         noopReason: "No unrecalled events matched the selected source scope.",
       },
       plannedChanges: [],
       unrecalledCount: 0,
+      checkpointComparison: checkpoint ? await compareStateWithCheckpoint(options.cwd, currentState, checkpoint, false) : null,
     };
   }
 
-  let candidateBundle = currentState.bundle;
   const result = await invokeProvider(options.provider, {
     cwd: options.cwd,
-    prompt: buildRecallPrompt(context, currentState, checkpoint, unrecalledEvents, options.source),
+    prompt: buildRecallPrompt(context, currentState, checkpoint, unrecalledEvents, effectiveSource),
     schema: bundleOutputSchema,
   });
   const errors = validateBundleShape(result.parsed);
@@ -165,7 +258,10 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
   if (!parsed) {
     throw new Error("Recall did not return a valid memory bundle.");
   }
-  candidateBundle = parsed;
+
+  const mergedBundle = mergeBundleSection(currentState.bundle, parsed, selectedSection, protectedSections);
+  const dedupeResult = dedupeBundle(mergedBundle);
+  const candidateBundle = dedupeResult.bundle;
 
   const now = new Date().toISOString();
   const reservedCheckpointId = await nextCheckpointId(options.cwd);
@@ -176,16 +272,22 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
       historyEventCount: events.length + 1,
       importSourceCount: sources.length,
     },
-    options.source,
+    effectiveSource,
     lastEventId(unrecalledEvents, cursor.lastRecalledEventId),
     now,
   );
 
   const nextState = buildState(candidateBundle, currentState.provider, updatedMaintenance, now);
-  const summary = buildRecallSummary(currentState.bundle, candidateBundle);
+  const summary = buildRecallSummary(currentState.bundle, candidateBundle, selectedSection, protectedSections, {
+    mergedGotchas: dedupeResult.mergedGotchas,
+    mergedNextSteps: dedupeResult.mergedNextSteps,
+  });
   const isNoop =
     stableStringify(currentState.bundle) === stableStringify(candidateBundle) &&
-    summary.changedSections.length === 0;
+    summary.changedSections.length === 0 &&
+    summary.mergedGotchas.length === 0 &&
+    summary.mergedNextSteps.length === 0;
+
   if (isNoop) {
     return {
       currentState,
@@ -197,10 +299,15 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
       },
       plannedChanges: [],
       unrecalledCount: unrecalledEvents.length,
+      checkpointComparison: checkpoint ? await compareStateWithCheckpoint(options.cwd, currentState, checkpoint, false) : null,
     };
   }
+
   const fileDiffs = await buildFileDiffs(options.cwd, nextState);
   const plannedChanges = await planProjectionWrites(projectState(options.cwd, nextState), getStatePath(options.cwd));
+  const checkpointComparison = checkpoint
+    ? await compareStateWithCheckpoint(options.cwd, nextState, checkpoint, options.showDiff, dedupeResult)
+    : null;
 
   return {
     currentState,
@@ -212,6 +319,7 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
     },
     plannedChanges,
     unrecalledCount: unrecalledEvents.length,
+    checkpointComparison,
   };
 }
 

@@ -8,6 +8,7 @@
 - `query`
 - `import`
 - `validate`
+- `status`
 
 Install the package first:
 
@@ -38,6 +39,8 @@ This applies to:
 - `recall`
 - `query`
 - `import sync`
+
+Recall-oriented commands also read defaults from `/.agent-memory/config.json`.
 
 ## `agent-memory init`
 
@@ -102,6 +105,15 @@ Optional source filter:
 npx agent-memory recall --source=imports
 ```
 
+Phase 2 adds:
+
+```bash
+npx agent-memory recall --section=gotchas
+npx agent-memory recall --policy=project-map-protected
+npx agent-memory recall --show-diff
+npx agent-memory recall --checkpoint chk-000001
+```
+
 ## `agent-memory query`
 
 ```bash
@@ -157,6 +169,28 @@ Current built-in source types:
 - malformed sessions are reported as failed items
 - the source keeps a sync status that `validate` can later inspect
 
+## `agent-memory status`
+
+```bash
+npx agent-memory status
+```
+
+Use `status` before `recall` when you want a maintenance-oriented readout.
+
+It shows:
+
+- current state and latest checkpoint id
+- unrecalled backlog counts
+- source sync health
+- checkpoint drift summary
+- the next suggested action
+
+Optional flags:
+
+```bash
+npx agent-memory status --checkpoint chk-000001 --show-diff
+```
+
 ## `agent-memory validate`
 
 ```bash
@@ -176,6 +210,7 @@ It checks:
 - referenced path existence
 - validation baseline freshness
 - recall backlog health
+- recall configuration validity
 
 Important interpretation:
 
@@ -190,3 +225,4 @@ Important interpretation:
 - `query` = retrieve memory
 - `import` = ingest external sessions
 - `validate` = audit the system
+- `status` = inspect maintenance state before acting

@@ -20,6 +20,8 @@ The system has four persistent pieces:
   Snapshots of canonical bundles after meaningful writes
 - `sources.json`
   The registry of external history inputs
+- `config.json`
+  The project-level recall defaults and policy surface
 
 `docs/agent-memory/*.md` remains the readable projection layer, but it is no longer the source of truth.
 
@@ -45,6 +47,8 @@ That is the purpose of the current architecture.
   Refresh the active bundle from current repository evidence
 - `recall`
   Consolidate unrecalled history into the active bundle
+- `status`
+  Inspect backlog, source health, and checkpoint drift before acting
 - `query`
   Answer a question from bundle, history, and checkpoints
 - `import`
@@ -58,6 +62,7 @@ That is the purpose of the current architecture.
 - append-only history
 - readable projections
 - deliberate consolidation instead of silent drift
+- configurable recall with explicit operator control
 - retrieval with citations, not opaque answers
 - explicit breaking changes over partial compatibility hacks
 

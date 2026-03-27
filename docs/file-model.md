@@ -8,6 +8,7 @@ The source of truth is no longer just one generated markdown layer. The canonica
 - `/.agent-memory/history/events.jsonl`
 - `/.agent-memory/history/checkpoints/*.json`
 - `/.agent-memory/sources.json`
+- `/.agent-memory/config.json`
 
 ## `state.json`
 
@@ -79,6 +80,7 @@ Each checkpoint stores a snapshot of the canonical bundle after a meaningful wri
 This gives the system:
 
 - a stable diff baseline for `recall`
+- a baseline for `status` checkpoint drift summaries
 - a retrievable memory layer for `query`
 - a structural integrity target for `validate`
 
@@ -94,6 +96,23 @@ Each source records:
 - `createdAt`
 - `updatedAt`
 - `lastSyncedAt`
+- `lastSyncStatus`
+- `lastSyncError`
+- `lastImportedCount`
+
+## `config.json`
+
+This is the project-level recall and maintenance configuration.
+
+Phase 2 keeps it intentionally small:
+
+- `recall.defaultSection`
+- `recall.defaultSource`
+- `recall.policy`
+- `recall.backlogWarnThreshold`
+- `recall.preview.showDiffByDefault`
+
+CLI flags can still override these defaults for a single command run.
 
 ## Projection Files
 
