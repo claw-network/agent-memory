@@ -3,6 +3,7 @@
 import { cwd, exit } from "node:process";
 import {
   runAutomateDaemon,
+  runAutomateEnsureRunning,
   runAutomateRunOnce,
   runAutomateStart,
   runAutomateStatus,
@@ -10,12 +11,22 @@ import {
 } from "./commands/automate";
 import { runImportAdd, runImportList, runImportSync } from "./commands/import";
 import { runInit } from "./commands/init";
+import { runIntegrate } from "./commands/integrate";
+import { runMcpServer } from "./commands/mcp";
 import { runQuery } from "./commands/query";
 import { runRecall } from "./commands/recall";
 import { runStatus } from "./commands/status";
 import { runUpdate } from "./commands/update";
 import { runValidate } from "./commands/validate";
-import type { ProviderPreference, QueryOutputFormat, QueryScope, RecallPolicy, RecallSection, RecallSourceScope } from "./types";
+import type {
+  IntegrationTarget,
+  ProviderPreference,
+  QueryOutputFormat,
+  QueryScope,
+  RecallPolicy,
+  RecallSection,
+  RecallSourceScope,
+} from "./types";
 
 interface CommonArgs {
   yes: boolean;
@@ -34,7 +45,9 @@ function printHelp(): void {
   console.log("  agent-memory import add <type> <path> [--name <id>]");
   console.log("  agent-memory import sync [<id>|--all] [--provider=auto|codex|claude]");
   console.log("  agent-memory import list");
-  console.log("  agent-memory automate start|stop|status|run-once");
+  console.log("  agent-memory integrate [claude|codex|all]");
+  console.log("  agent-memory mcp");
+  console.log("  agent-memory automate start|stop|status|run-once|ensure-running");
   console.log("  agent-memory status [--checkpoint <id>] [--show-diff]");
   console.log("  agent-memory validate");
   console.log("");
@@ -44,6 +57,8 @@ function printHelp(): void {
   console.log("  recall    Consolidate history into the canonical memory with preview and diff output.");
   console.log("  query     Answer a memory question with citations from bundle, history, or checkpoints.");
   console.log("  import    Manage external session sources and sync them into history events.");
+  console.log("  integrate Write Claude Code and Codex integration files.");
+  console.log("  mcp       Start the local MCP stdio server.");
   console.log("  automate  Run local automation daemon commands for import-sync and recall maintenance.");
   console.log("  status    Show backlog, source health, and checkpoint drift before running recall.");
   console.log("  validate  Audit canonical state, history, checkpoints, projections, and recall health.");
@@ -103,6 +118,14 @@ function parseQueryOutputFormat(value: string): QueryOutputFormat {
   }
 
   throw new Error(`Unknown query output format: ${value}`);
+}
+
+function parseIntegrationTarget(value: string): IntegrationTarget {
+  if (value === "all" || value === "claude" || value === "codex") {
+    return value;
+  }
+
+  throw new Error(`Unknown integration target: ${value}`);
 }
 
 function parseCommonFlags(argv: string[]): { rest: string[]; common: CommonArgs } {
@@ -448,10 +471,31 @@ async function main(): Promise<void> {
 
       throw new Error(`Unknown import subcommand: ${subcommand}`);
     }
+    case "integrate": {
+      const [target, ...tail] = restArgs;
+      if (tail.length > 0) {
+        throw new Error(`Unexpected extra argument: ${tail[0]}`);
+      }
+      const code = await runIntegrate({
+        cwd: cwd(),
+        target: target ? parseIntegrationTarget(target) : "all",
+      });
+      if (code !== 0) {
+        exit(code);
+      }
+      return;
+    }
+    case "mcp": {
+      const code = await runMcpServer({ cwd: cwd() });
+      if (code !== 0) {
+        exit(code);
+      }
+      return;
+    }
     case "automate": {
       const [subcommand] = restArgs;
       if (!subcommand) {
-        throw new Error("Automate command requires a subcommand: start, stop, status, or run-once.");
+        throw new Error("Automate command requires a subcommand: start, stop, status, run-once, or ensure-running.");
       }
 
       switch (subcommand) {
@@ -478,6 +522,13 @@ async function main(): Promise<void> {
         }
         case "run-once": {
           const code = await runAutomateRunOnce({ cwd: cwd() });
+          if (code !== 0) {
+            exit(code);
+          }
+          return;
+        }
+        case "ensure-running": {
+          const code = await runAutomateEnsureRunning({ cwd: cwd() });
           if (code !== 0) {
             exit(code);
           }

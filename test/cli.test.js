@@ -296,6 +296,19 @@ async function main() {
     return;
   }
 
+   if (args[0] === "mcp" && args[1] === "add") {
+    const logPath = process.env.AGENT_MEMORY_FAKE_CODEX_MCP_LOG;
+    if (logPath) {
+      fs.appendFileSync(logPath, JSON.stringify(args) + "\\n", "utf8");
+    }
+    if (process.env.AGENT_MEMORY_FAKE_CODEX_MCP_MODE === "fail") {
+      process.stderr.write("fake codex mcp add failure\\n");
+      process.exit(1);
+    }
+    process.stdout.write("fake codex mcp add success\\n");
+    return;
+  }
+
   if (fakeMode === "auth-error") {
     process.stderr.write("authentication required\\n");
     process.exit(1);
@@ -440,6 +453,75 @@ async function runCli(projectDir, args, extraEnv = {}) {
       resolve({ code, stdout, stderr });
     });
   });
+}
+
+async function startMcpSession(projectDir, extraEnv = {}) {
+  const child = spawn(process.execPath, [CLI_PATH, "mcp"], {
+    cwd: projectDir,
+    env: {
+      ...process.env,
+      ...extraEnv,
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  let buffer = Buffer.alloc(0);
+  const pending = new Map();
+  let nextId = 1;
+
+  child.stdout.on("data", (chunk) => {
+    buffer = Buffer.concat([buffer, Buffer.from(chunk)]);
+    while (true) {
+      const headerEnd = buffer.indexOf("\r\n\r\n");
+      if (headerEnd < 0) {
+        break;
+      }
+
+      const header = buffer.slice(0, headerEnd).toString("utf8");
+      const match = header.match(/Content-Length:\s*(\d+)/i);
+      if (!match) {
+        buffer = Buffer.alloc(0);
+        break;
+      }
+
+      const contentLength = Number(match[1]);
+      const totalLength = headerEnd + 4 + contentLength;
+      if (buffer.length < totalLength) {
+        break;
+      }
+
+      const payload = JSON.parse(buffer.slice(headerEnd + 4, totalLength).toString("utf8"));
+      buffer = buffer.slice(totalLength);
+      if (payload.id !== undefined && pending.has(payload.id)) {
+        pending.get(payload.id)(payload);
+        pending.delete(payload.id);
+      }
+    }
+  });
+
+  async function request(method, params) {
+    const id = nextId++;
+    const payload = JSON.stringify({ jsonrpc: "2.0", id, method, params });
+    child.stdin.write(`Content-Length: ${Buffer.byteLength(payload, "utf8")}\r\n\r\n${payload}`);
+    return await new Promise((resolve) => {
+      pending.set(id, resolve);
+    });
+  }
+
+  async function notify(method, params) {
+    const payload = JSON.stringify({ jsonrpc: "2.0", method, params });
+    child.stdin.write(`Content-Length: ${Buffer.byteLength(payload, "utf8")}\r\n\r\n${payload}`);
+  }
+
+  return {
+    child,
+    request,
+    notify,
+    async close() {
+      child.kill("SIGTERM");
+      await new Promise((resolve) => child.on("close", resolve));
+    },
+  };
 }
 
 function fixturePath(...parts) {
@@ -1292,6 +1374,148 @@ test("automate daemon lifecycle supports start, status, duplicate start rejectio
   }
 });
 
+test("automate ensure-running starts the daemon and is idempotent", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  try {
+    const first = await runCli(projectDir, ["automate", "ensure-running"], providerEnv(providers));
+    assert.equal(first.code, 0, first.stderr);
+    assert.match(first.stdout, /Automation daemon started/);
+
+    const second = await runCli(projectDir, ["automate", "ensure-running"], providerEnv(providers));
+    assert.equal(second.code, 0, second.stderr);
+    assert.match(second.stdout, /already running/);
+  } finally {
+    await runCli(projectDir, ["automate", "stop"], providerEnv(providers));
+  }
+});
+
+test("integrate claude writes project MCP, hooks, and skill files idempotently", async () => {
+  const projectDir = await createFixtureProject();
+  const first = await runCli(projectDir, ["integrate", "claude"]);
+  assert.equal(first.code, 0, first.stderr);
+
+  const mcp = JSON.parse(await fs.readFile(path.join(projectDir, ".mcp.json"), "utf8"));
+  assert.equal(mcp.mcpServers["agent-memory"].command, "npx");
+
+  const settings = JSON.parse(await fs.readFile(path.join(projectDir, ".claude", "settings.json"), "utf8"));
+  assert.ok(settings.hooks.SessionStart);
+  assert.ok(settings.hooks.Stop);
+
+  const skill = await fs.readFile(path.join(projectDir, ".claude", "skills", "agent-memory", "SKILL.md"), "utf8");
+  assert.match(skill, /memory_query/);
+
+  const before = await fs.readFile(path.join(projectDir, ".claude", "settings.json"), "utf8");
+  const second = await runCli(projectDir, ["integrate", "claude"]);
+  assert.equal(second.code, 0, second.stderr);
+  const after = await fs.readFile(path.join(projectDir, ".claude", "settings.json"), "utf8");
+  assert.equal(after, before);
+});
+
+test("integrate codex uses CLI registration when available and preserves AGENTS guidance", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-home-"));
+  const codexLog = path.join(fakeHome, "codex-mcp.log");
+
+  const result = await runCli(projectDir, ["integrate", "codex"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+    AGENT_MEMORY_FAKE_CODEX_MCP_LOG: codexLog,
+  });
+  assert.equal(result.code, 0, result.stderr);
+
+  const agents = await fs.readFile(path.join(projectDir, "AGENTS.md"), "utf8");
+  assert.match(agents, /automation_ensure_running/);
+  assert.match(agents, /memory_query/);
+
+  const codexConfig = await fs.readFile(path.join(fakeHome, ".codex", "config.toml"), "utf8");
+  assert.match(codexConfig, /\[mcp_servers\.agent-memory\]/);
+  assert.match(codexConfig, /command = "npx"/);
+
+  const log = await fs.readFile(codexLog, "utf8");
+  assert.match(log, /"mcp","add","agent-memory"/);
+});
+
+test("integrate codex falls back to safe config merge when codex CLI registration fails", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-home-"));
+
+  await fs.mkdir(path.join(fakeHome, ".codex"), { recursive: true });
+  await fs.writeFile(
+    path.join(fakeHome, ".codex", "config.toml"),
+    '[mcp_servers.other]\ncommand = "echo"\nargs = ["hello"]\n',
+    "utf8",
+  );
+
+  const result = await runCli(projectDir, ["integrate", "codex"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+    AGENT_MEMORY_FAKE_CODEX_MCP_MODE: "fail",
+  });
+  assert.equal(result.code, 0, result.stderr);
+
+  const codexConfig = await fs.readFile(path.join(fakeHome, ".codex", "config.toml"), "utf8");
+  assert.match(codexConfig, /\[mcp_servers\.other\]/);
+  assert.match(codexConfig, /\[mcp_servers\.agent-memory\]/);
+});
+
+test("integrate all combines Claude and Codex integration outputs", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-home-"));
+
+  const result = await runCli(projectDir, ["integrate"], {
+    ...providerEnv(providers),
+    HOME: fakeHome,
+  });
+  assert.equal(result.code, 0, result.stderr);
+
+  await fs.access(path.join(projectDir, ".mcp.json"));
+  await fs.access(path.join(projectDir, ".claude", "settings.json"));
+  await fs.access(path.join(projectDir, ".claude", "skills", "agent-memory", "SKILL.md"));
+  await fs.access(path.join(projectDir, "AGENTS.md"));
+  await fs.access(path.join(fakeHome, ".codex", "config.toml"));
+});
+
+test("agent-memory mcp supports initialize, tools/list, and tool calls", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const session = await startMcpSession(projectDir, providerEnv(providers));
+
+  try {
+    const initResult = await session.request("initialize", {});
+    assert.equal(initResult.result.serverInfo.name, "agent-memory");
+
+    await session.notify("notifications/initialized", {});
+
+    const toolsResult = await session.request("tools/list", {});
+    assert.ok(Array.isArray(toolsResult.result.tools));
+    assert.ok(toolsResult.result.tools.some((tool) => tool.name === "memory_query"));
+    assert.ok(toolsResult.result.tools.some((tool) => tool.name === "automation_ensure_running"));
+
+    const toolCall = await session.request("tools/call", {
+      name: "memory_validate",
+      arguments: {},
+    });
+    assert.equal(toolCall.result.content[0].type, "text");
+    assert.match(toolCall.result.content[0].text, /state:schema|Summary:/);
+  } finally {
+    await session.close();
+  }
+});
+
 test("status reports backlog, source health, checkpoint drift, and suggested next action", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
@@ -1535,4 +1759,21 @@ test("automation docs describe the local daemon and aggressive recall behavior",
   assert.match(commands, /dirty worktrees do not block the cycle/i);
   assert.match(roadmap, /local built-in automation daemon/i);
   assert.match(roadmap, /aggressive auto-apply recall/i);
+});
+
+test("integration docs describe integrate, mcp, and ensure-running", async () => {
+  const [readme, commands, roadmap] = await Promise.all([
+    fs.readFile(path.join(REPO_ROOT, "README.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "commands.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "roadmap.md"), "utf8"),
+  ]);
+
+  assert.match(readme, /npx agent-memory integrate/);
+  assert.match(commands, /## `agent-memory integrate`/);
+  assert.match(commands, /## `agent-memory mcp`/);
+  assert.match(readme, /automate ensure-running/);
+  assert.match(commands, /automate ensure-running/);
+  assert.match(readme, /Claude Code .*SessionStart.*Stop hooks/i);
+  assert.match(readme, /Codex integration uses MCP \+ `AGENTS\.md` \+ the local daemon/i);
+  assert.match(roadmap, /safe Codex MCP registration via `integrate`/);
 });

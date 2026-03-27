@@ -1,4 +1,5 @@
 import {
+  ensureAutomationDaemonRunning,
   getAutomationStatus,
   runAutomationCycle,
   runAutomationDaemonLoop,
@@ -78,6 +79,12 @@ export async function runAutomateRunOnce(options: AutomationCommandOptions): Pro
   }
 
   return result.status === "failed" ? 1 : 0;
+}
+
+export async function runAutomateEnsureRunning(options: AutomationCommandOptions): Promise<number> {
+  const result = await ensureAutomationDaemonRunning(options.cwd);
+  console.log(`Automation daemon ${result.started ? "started" : "already running"} (pid=${result.pid}).`);
+  return 0;
 }
 
 export async function runAutomateDaemon(options: AutomationCommandOptions): Promise<number> {

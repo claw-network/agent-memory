@@ -16,6 +16,7 @@ Durable project memory with history, recall, and query.
 - it lets you retrieve memory with `query`
 - it lets you inspect backlog and checkpoint drift with `status`
 - it can automate import-sync and recall with `automate`
+- it can integrate Claude Code and Codex with `integrate`
 
 ## Why This Exists
 
@@ -67,6 +68,7 @@ Instead, it:
 6. lets you ask memory questions with `query`
 7. lets you inspect backlog and checkpoint drift with `status`
 8. can run local automation for import-sync and recall with `automate`
+9. can integrate chat clients and MCP tooling with `integrate`
 
 If you need to control the runtime used for synthesis, use `--provider=auto|codex|claude`.
 
@@ -170,6 +172,45 @@ The first Phase 4 milestone is a local built-in automation daemon.
 - it records the latest machine-readable run result in `.agent-memory/automation/latest-run.json`
 - it uses aggressive auto-apply recall by default
 - dirty worktrees do not block automation cycles in this first version
+
+### Integrate Claude Code + Codex
+
+```bash
+npx agent-memory integrate
+```
+
+This command is separate from `init`.
+
+- `init` stays repo-local and never edits global chat tooling config
+- `integrate` writes Claude Code project files
+- `integrate` also registers Codex MCP globally with a safe merge
+
+Generated/updated files include:
+
+- `.mcp.json`
+- `.claude/settings.json`
+- `.claude/skills/agent-memory/SKILL.md`
+- `AGENTS.md`
+- `~/.codex/config.toml`
+
+Claude Code integration uses project MCP + project skills + SessionStart and Stop hooks.
+Codex integration uses MCP + `AGENTS.md` + the local daemon.
+
+### MCP server
+
+```bash
+npx agent-memory mcp
+```
+
+This starts the local stdio MCP server used by Claude Code and Codex integrations.
+
+### Ensure automation is running
+
+```bash
+npx agent-memory automate ensure-running
+```
+
+This is the lightweight startup command used by Claude Code `SessionStart` hooks and can also be called directly.
 
 ### Audit health
 

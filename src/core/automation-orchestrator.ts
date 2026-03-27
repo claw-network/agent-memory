@@ -227,6 +227,22 @@ export async function startAutomationDaemon(rootDir: string): Promise<{ pid: num
   return { pid: child.pid ?? 0 };
 }
 
+export async function ensureAutomationDaemonRunning(rootDir: string): Promise<{ started: boolean; pid: number }> {
+  const status = await getAutomationStatus(rootDir);
+  if (status.running && status.daemon) {
+    return {
+      started: false,
+      pid: status.daemon.pid,
+    };
+  }
+
+  const started = await startAutomationDaemon(rootDir);
+  return {
+    started: true,
+    pid: started.pid,
+  };
+}
+
 export async function stopAutomationDaemon(rootDir: string): Promise<{ stopped: boolean; pid: number | null }> {
   const daemonState = await readAutomationDaemonStateIfPresent(rootDir).catch(() => null);
   if (!daemonState) {

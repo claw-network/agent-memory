@@ -8,6 +8,8 @@
 - `query`
 - `import`
 - `automate`
+- `integrate`
+- `mcp`
 - `validate`
 - `status`
 
@@ -201,6 +203,12 @@ npx agent-memory automate status
 npx agent-memory automate run-once
 ```
 
+### Ensure the daemon is running
+
+```bash
+npx agent-memory automate ensure-running
+```
+
 First milestone behavior:
 
 - the daemon is local and built in, not cron-backed
@@ -209,6 +217,50 @@ First milestone behavior:
 - dirty worktrees do not block the cycle
 - runtime metadata lives in `.agent-memory/automation/`
 - the latest machine-readable run result lives in `.agent-memory/automation/latest-run.json`
+
+## `agent-memory integrate`
+
+### Integrate everything
+
+```bash
+npx agent-memory integrate
+```
+
+### Integrate only Claude Code
+
+```bash
+npx agent-memory integrate claude
+```
+
+### Integrate only Codex
+
+```bash
+npx agent-memory integrate codex
+```
+
+First milestone behavior:
+
+- `init` does not touch any chat-client config
+- Claude Code integration is project-scoped
+- Codex MCP registration is global but merged safely
+- Claude Code uses project MCP + project skills + `SessionStart` / `Stop` hooks
+- Codex uses MCP + `AGENTS.md` + the local daemon
+
+Generated or updated files:
+
+- `.mcp.json`
+- `.claude/settings.json`
+- `.claude/skills/agent-memory/SKILL.md`
+- `AGENTS.md`
+- `~/.codex/config.toml`
+
+## `agent-memory mcp`
+
+```bash
+npx agent-memory mcp
+```
+
+Starts the local stdio MCP server for chat-client integrations.
 
 ## `agent-memory status`
 
@@ -265,6 +317,8 @@ Important interpretation:
 - `recall` = consolidate history
 - `query` = retrieve memory
 - `automate` = run local automation for import-sync and recall
+- `integrate` = connect Claude Code and Codex to agent-memory
+- `mcp` = expose agent-memory as a local MCP server
 - `import` = ingest external sessions
 - `validate` = audit the system
 - `status` = inspect maintenance state before acting

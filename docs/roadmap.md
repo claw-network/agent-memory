@@ -92,6 +92,7 @@ Focus on making `query` a stronger day-to-day tool:
 Focus on reducing maintenance overhead:
 
 - first milestone: local built-in automation daemon with `automate start|stop|status|run-once`
+- integration milestone: Claude Code project files plus safe Codex MCP registration via `integrate`
 - project-level automation settings under `.agent-memory/config.json`
 - aggressive auto-apply recall for structurally healthy repos, even with dirty worktrees
 - broader importer ecosystem beyond Claude/Codex local history

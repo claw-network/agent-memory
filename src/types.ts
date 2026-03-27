@@ -14,6 +14,7 @@ export type QueryOutputFormat = "text" | "json";
 export type CitationSourceType = "bundle" | "event" | "checkpoint";
 export type SourceSyncStatus = "never" | "passed" | "failed";
 export type AutomationRunStatus = "idle" | "imported" | "recalled" | "recalled_noop" | "failed";
+export type IntegrationTarget = "all" | "claude" | "codex";
 export type RecallSection =
   | "all"
   | "project"
@@ -279,6 +280,11 @@ export interface QueryOptions {
 
 export interface AutomationCommandOptions {
   cwd: string;
+}
+
+export interface IntegrateCommandOptions {
+  cwd: string;
+  target: IntegrationTarget;
 }
 
 export interface ImportAddOptions {
