@@ -1,6 +1,7 @@
 import { compareStateWithCheckpoint } from "./checkpoint-comparison";
 import { readConfig } from "./config-store";
 import { eventsAfterCursor, readHistoryEvents, readSources } from "./history-store";
+import { summarizeUnrecalledHistory } from "./recall-evidence";
 import { readState } from "./state-store";
 import type { CheckpointState, StatusReport } from "../types";
 
@@ -32,10 +33,12 @@ export async function buildStatusReport(
   const config = await readConfig(rootDir);
 
   const comparison = await compareStateWithCheckpoint(rootDir, state, checkpoint, includeDiffs);
-  const unrecalledAll = eventsAfterCursor(events, state.maintenance.recallCursors.all.lastRecalledEventId).length;
+  const unrecalledAllEvents = eventsAfterCursor(events, state.maintenance.recallCursors.all.lastRecalledEventId);
+  const unrecalledAll = unrecalledAllEvents.length;
   const unrecalledLocal = eventsAfterCursor(events.filter((event) => event.kind === "tool_run"), state.maintenance.recallCursors.local.lastRecalledEventId).length;
   const unrecalledImports = eventsAfterCursor(events.filter((event) => event.kind === "imported_session"), state.maintenance.recallCursors.imports.lastRecalledEventId).length;
   const hasFailedSource = sources.some((source) => source.lastSyncStatus === "failed");
+  const unrecalledSummary = summarizeUnrecalledHistory(unrecalledAllEvents);
 
   return {
     state: {
@@ -57,6 +60,7 @@ export async function buildStatusReport(
       lastSyncError: source.lastSyncError,
     })),
     checkpoint: comparison,
+    unrecalledSummary,
     suggestedNextAction:
       unrecalledAll > config.recall.backlogWarnThreshold
         ? "Run `agent-memory recall` because the backlog is above the configured threshold."

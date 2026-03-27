@@ -70,7 +70,9 @@ That is the purpose of the current architecture.
 
 This schema is intentionally breaking.
 
-Old repositories should not be migrated in place. Re-run:
+There is no migration path.
+
+Old repositories must not be migrated in place. Re-run:
 
 ```bash
 npx agent-memory init

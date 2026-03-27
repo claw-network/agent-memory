@@ -364,6 +364,23 @@ export interface DeduplicationResult {
   mergedNextSteps: string[];
 }
 
+export interface RecallEvidenceGroup {
+  groupId: string;
+  sourceScopeLabel: "local" | "imports" | "mixed";
+  eventIds: string[];
+  sourceIds: string[];
+  createdAtFirst: string;
+  createdAtLast: string;
+  representativeSummary: string;
+  signals: HistorySignalSet;
+}
+
+export interface UnrecalledHistorySummary {
+  rawEventCount: number;
+  groupedItemCount: number;
+  groups: RecallEvidenceGroup[];
+}
+
 export interface CheckpointComparisonSummary {
   checkpointId: string | null;
   changedSections: string[];
@@ -418,8 +435,9 @@ export interface StatusReport {
     lastSyncedAt: string | null;
     lastImportedCount: number;
     lastSyncError: string | null;
-  }>;
+    }>;
   checkpoint: CheckpointComparisonSummary | null;
+  unrecalledSummary: UnrecalledHistorySummary;
   suggestedNextAction: string;
 }
 

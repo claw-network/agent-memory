@@ -1,4 +1,5 @@
 import { readLatestCheckpoint } from "../core/history-store";
+import { formatUnrecalledHistorySummary } from "../core/command-helpers";
 import { buildStatusReport } from "../core/status-orchestrator";
 
 export async function runStatus(options: {
@@ -19,6 +20,9 @@ export async function runStatus(options: {
   console.log(`- unrecalled all: ${report.history.unrecalledAll}`);
   console.log(`- unrecalled local: ${report.history.unrecalledLocal}`);
   console.log(`- unrecalled imports: ${report.history.unrecalledImports}`);
+  console.log("");
+  console.log("Unrecalled Summary:");
+  console.log(formatUnrecalledHistorySummary(report.unrecalledSummary));
   console.log("");
   console.log("Sources:");
   if (report.sources.length === 0) {

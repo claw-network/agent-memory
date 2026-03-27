@@ -27,6 +27,7 @@ This version is intentionally destructive.
 - there is no migration path
 - old `state.json` files are not reused
 - old projection markers are not reused
+- existing repositories must rerun `npx agent-memory init`
 
 Treat adoption as a rebuild:
 

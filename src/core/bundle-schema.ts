@@ -3,6 +3,7 @@ import type {
   AgentMemoryConfig,
   AgentMemoryBundle,
   AgentMemoryState,
+  CheckpointState,
   HistoryEvent,
   HistorySignalSet,
   HistorySource,
@@ -224,6 +225,22 @@ export function validateHistorySourceShape(value: unknown): string[] {
   expectEnum(record.lastSyncStatus, ["never", "passed", "failed"] as const, "source.lastSyncStatus", errors);
   expectNullableString(record.lastSyncError, "source.lastSyncError", errors);
   expectNumber(record.lastImportedCount, "source.lastImportedCount", errors);
+  return errors;
+}
+
+export function validateCheckpointShape(value: unknown): string[] {
+  const errors: string[] = [];
+  const checkpoint = expectRecord(value, "checkpoint", errors);
+  if (!checkpoint) {
+    return errors;
+  }
+
+  expectString(checkpoint.id, "checkpoint.id", errors);
+  expectString(checkpoint.createdAt, "checkpoint.createdAt", errors);
+  expectNullableString(checkpoint.eventId, "checkpoint.eventId", errors);
+  expectString(checkpoint.bundleHash, "checkpoint.bundleHash", errors);
+  expectString(checkpoint.summary, "checkpoint.summary", errors);
+  errors.push(...validateBundleShape(checkpoint.bundle).map((message) => message.replace(/^bundle/, "checkpoint.bundle")));
   return errors;
 }
 
@@ -491,6 +508,10 @@ export function asHistoryEvent(value: unknown): HistoryEvent | null {
 
 export function asHistorySource(value: unknown): HistorySource | null {
   return validateHistorySourceShape(value).length === 0 ? (value as HistorySource) : null;
+}
+
+export function asCheckpointState(value: unknown): CheckpointState | null {
+  return validateCheckpointShape(value).length === 0 ? (value as CheckpointState) : null;
 }
 
 export const bundleOutputSchema: Record<string, unknown> = {

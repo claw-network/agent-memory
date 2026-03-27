@@ -123,9 +123,9 @@ Future work should now treat Phase 1 as the stabilization baseline and move incr
 Phase 2 is complete:
 
 - recall supports section-aware consolidation across the full bundle
-- conservative deduplication is applied before state write
+- recall input is grouped across local and imported history before consolidation, and conservative deduplication is still applied before state write
 - checkpoint comparison powers summary-first recall previews
-- `status` provides backlog, source health, checkpoint drift, and suggested next action
+- `status` provides backlog counts, grouped unrecalled history summaries, source health, checkpoint drift, and suggested next action
 - `config.json` provides project-level recall defaults and policy controls
 
 Future work should now treat Phase 2 as complete and move into Phase 3.

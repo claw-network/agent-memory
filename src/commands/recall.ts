@@ -1,5 +1,5 @@
 import { applyRecall, prepareRecall } from "../core/recall-orchestrator";
-import { confirm, formatPlan } from "../core/command-helpers";
+import { confirm, formatPlan, formatUnrecalledHistorySummary } from "../core/command-helpers";
 import { readConfig } from "../core/config-store";
 import type { RecallOptions } from "../types";
 
@@ -30,6 +30,11 @@ export async function runRecall(options: RecallOptions): Promise<number> {
   console.log(`Recall section: ${effectiveSection}`);
   console.log(`Recall policy: ${effectivePolicy}`);
   console.log(`Unrecalled events considered: ${prepared.unrecalledCount}`);
+  if (prepared.unrecalledSummary.rawEventCount > 0) {
+    console.log("");
+    console.log("Unrecalled History Summary:");
+    console.log(formatUnrecalledHistorySummary(prepared.unrecalledSummary));
+  }
   if (prepared.candidate.noopReason) {
     console.log("");
     console.log("Nothing to recall.");

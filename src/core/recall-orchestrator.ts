@@ -17,6 +17,7 @@ import {
 import { updateRecallMaintenance, cloneMaintenance } from "./history-event-builders";
 import { planProjectionWrites, renderEntryContent } from "./merge-files";
 import { buildRecallPrompt } from "./prompt-builder";
+import { summarizeUnrecalledHistory } from "./recall-evidence";
 import { invokeProvider } from "./provider-adapters";
 import { buildState, getStatePath, stableStringify } from "./state-store";
 import { projectState } from "./bundle-projector";
@@ -32,6 +33,7 @@ import type {
   RecallPolicy,
   RecallSection,
   RecallSourceScope,
+  UnrecalledHistorySummary,
 } from "../types";
 
 interface PreparedRecall {
@@ -39,6 +41,7 @@ interface PreparedRecall {
   candidate: RecallCandidate;
   plannedChanges: Awaited<ReturnType<typeof planProjectionWrites>>;
   unrecalledCount: number;
+  unrecalledSummary: UnrecalledHistorySummary;
   checkpointComparison: CheckpointComparisonSummary | null;
 }
 
@@ -225,6 +228,7 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
       : await readLatestCheckpoint(options.cwd, currentState.maintenance.latestCheckpointId);
   const cursor = currentState.maintenance.recallCursors[effectiveSource];
   const unrecalledEvents = filterEventsBySource(eventsAfterCursor(events, cursor.lastRecalledEventId), effectiveSource);
+  const unrecalledSummary = summarizeUnrecalledHistory(unrecalledEvents);
 
   if (unrecalledEvents.length === 0) {
     return {
@@ -240,13 +244,14 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
       },
       plannedChanges: [],
       unrecalledCount: 0,
+      unrecalledSummary,
       checkpointComparison: checkpoint ? await compareStateWithCheckpoint(options.cwd, currentState, checkpoint, false) : null,
     };
   }
 
   const result = await invokeProvider(options.provider, {
     cwd: options.cwd,
-    prompt: buildRecallPrompt(context, currentState, checkpoint, unrecalledEvents, effectiveSource),
+    prompt: buildRecallPrompt(context, currentState, checkpoint, unrecalledSummary.groups, effectiveSource),
     schema: bundleOutputSchema,
   });
   const errors = validateBundleShape(result.parsed);
@@ -299,6 +304,7 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
       },
       plannedChanges: [],
       unrecalledCount: unrecalledEvents.length,
+      unrecalledSummary,
       checkpointComparison: checkpoint ? await compareStateWithCheckpoint(options.cwd, currentState, checkpoint, false) : null,
     };
   }
@@ -319,6 +325,7 @@ export async function prepareRecall(options: RecallOptions): Promise<PreparedRec
     },
     plannedChanges,
     unrecalledCount: unrecalledEvents.length,
+    unrecalledSummary,
     checkpointComparison,
   };
 }

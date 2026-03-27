@@ -1,10 +1,11 @@
-import { asQueryResult, queryOutputSchema, validateQueryResultShape } from "./bundle-schema";
-import { readLatestCheckpoint, readHistoryEvents } from "./history-store";
+import { asQueryResult, queryOutputSchema, validateCheckpointShape, validateQueryResultShape } from "./bundle-schema";
+import { readHistoryEvents, readRecentCheckpoints } from "./history-store";
 import { buildQueryPrompt } from "./prompt-builder";
 import { invokeProvider } from "./provider-adapters";
 import { readState } from "./state-store";
 import type {
   AgentMemoryBundle,
+  CheckpointState,
   HistoryEvent,
   QueryOptions,
   QueryResult,
@@ -12,6 +13,7 @@ import type {
 } from "../types";
 
 const MAX_SHORTLIST_ITEMS = 8;
+const MAX_RECENT_CHECKPOINTS = 5;
 const MIN_CONFIDENT_SCORE = 6;
 
 function tokenize(value: string): string[] {
@@ -170,30 +172,40 @@ function historyShortlist(events: HistoryEvent[]): QueryShortlistItem[] {
   }));
 }
 
+function checkpointShortlist(checkpoints: CheckpointState[]): QueryShortlistItem[] {
+  return checkpoints.map((checkpoint) => ({
+    sourceType: "checkpoint" as const,
+    sourceId: checkpoint.id,
+    pathOrSection: `checkpoint:${checkpoint.id}`,
+    summary: checkpoint.summary,
+    content: [
+      checkpoint.summary,
+      checkpoint.bundle.currentFocus.summary,
+      checkpoint.bundle.currentFocus.validationSnapshot.summary,
+      ...checkpoint.bundle.projectMap.architectureNotes,
+      ...checkpoint.bundle.gotchas.map((gotcha) => `${gotcha.title}: ${gotcha.cause}`),
+      ...checkpoint.bundle.nextSteps.map((step) => `${step.title}: ${step.start}`),
+    ].join("\n"),
+    createdAt: checkpoint.createdAt,
+  }));
+}
+
 export async function runQuery(options: QueryOptions): Promise<QueryResult> {
   const state = await readState(options.cwd);
   const events = await readHistoryEvents(options.cwd);
-  const checkpoint = await readLatestCheckpoint(options.cwd, state.maintenance.latestCheckpointId);
+  const checkpoints = await readRecentCheckpoints(options.cwd, MAX_RECENT_CHECKPOINTS);
+  for (const checkpoint of checkpoints) {
+    const errors = validateCheckpointShape(checkpoint);
+    if (errors.length > 0) {
+      throw new Error(`Checkpoint ${checkpoint.id} is invalid: ${errors.join(" ")}`);
+    }
+  }
   const questionTokens = tokenize(options.question);
 
   let items: QueryShortlistItem[] = [];
   if (options.scope === "state" || options.scope === "all") {
     items.push(...bundleShortlist(state.bundle));
-    if (checkpoint) {
-      items.push({
-        sourceType: "checkpoint",
-        sourceId: checkpoint.id,
-        pathOrSection: `checkpoint:${checkpoint.id}`,
-        summary: checkpoint.summary,
-        content: [
-          checkpoint.summary,
-          ...checkpoint.bundle.projectMap.architectureNotes,
-          ...checkpoint.bundle.gotchas.map((gotcha) => gotcha.title),
-          ...checkpoint.bundle.nextSteps.map((step) => step.title),
-        ].join("\n"),
-        createdAt: checkpoint.createdAt,
-      });
-    }
+    items.push(...checkpointShortlist(checkpoints));
   }
 
   if (options.scope === "history" || options.scope === "all") {

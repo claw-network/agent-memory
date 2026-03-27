@@ -152,6 +152,12 @@ export async function listCheckpointIds(rootDir: string): Promise<string[]> {
     .sort((left, right) => left.localeCompare(right));
 }
 
+export async function readRecentCheckpoints(rootDir: string, limit: number): Promise<CheckpointState[]> {
+  const checkpointIds = (await listCheckpointIds(rootDir)).slice(-Math.max(limit, 0)).reverse();
+  const checkpoints = await Promise.all(checkpointIds.map((checkpointId) => readCheckpoint(rootDir, checkpointId)));
+  return checkpoints.filter((checkpoint): checkpoint is CheckpointState => checkpoint !== null);
+}
+
 export async function nextEventId(rootDir: string): Promise<string> {
   const events = await readHistoryEvents(rootDir);
   const next = maxEventOrdinal(events) + 1;

@@ -93,6 +93,7 @@ npx agent-memory recall
 ```
 
 Reads unrecalled history, proposes a consolidated bundle, shows summary changes and file diffs, and applies only after confirmation.
+The preview also includes a grouped unrecalled history summary before apply.
 
 If no unrecalled events produced durable changes, `recall` exits with a clear no-op message and does not write a checkpoint or tool-run event.
 
@@ -136,7 +137,7 @@ npx agent-memory status
 Shows:
 
 - state and latest checkpoint id
-- unrecalled backlog across all/local/imported history
+- unrecalled backlog counts plus a grouped summary of unrecalled history
 - source sync health
 - checkpoint drift summary
 - the next suggested action
@@ -171,7 +172,7 @@ This is a destructive model change.
 - old `state.json` formats are not supported
 - old projection markers are not supported
 - there is no migration path
-- old repositories should rerun `npx agent-memory init`
+- old repositories must rerun `npx agent-memory init`
 
 ## Learn More
 

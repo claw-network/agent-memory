@@ -2,12 +2,18 @@ import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ENTRY_VERSION, PROJECTION_VERSION, RECALL_WARN_EVENT_COUNT, VALIDATION_MAX_AGE_DAYS } from "./constants";
 import { parseEntryMarker, parseProjectionMarker, projectState } from "./bundle-projector";
-import { validateConfigShape, validateHistoryEventShape, validateHistorySourceShape, validateStateShape } from "./bundle-schema";
+import {
+  validateCheckpointShape,
+  validateConfigShape,
+  validateHistoryEventShape,
+  validateHistorySourceShape,
+  validateStateShape,
+} from "./bundle-schema";
 import { getConfigPath, readConfig } from "./config-store";
 import { isSupportedSourceType } from "./import-framework";
-import { getCheckpointsDir, getEventsPath, getSourcesPath, listCheckpointIds, readHistoryEvents, readLatestCheckpoint, readSources } from "./history-store";
+import { getCheckpointsDir, getEventsPath, getSourcesPath, listCheckpointIds, readHistoryEvents, readSources } from "./history-store";
 import { computeBundleHash, getStatePath } from "./state-store";
-import type { AgentMemoryState, AuditFinding } from "../types";
+import type { AgentMemoryState, AuditFinding, CheckpointState } from "../types";
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -214,7 +220,7 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
       findings.push({
         status: "pass",
         code: "history:events",
-        message: "History events are readable and continuous.",
+        message: "History events are readable, continuous, and preserve append-only ordering.",
       });
     }
 
@@ -350,25 +356,79 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
     });
   } else {
     const checkpointIds = await listCheckpointIds(rootDir);
+    let validCheckpointCount = 0;
+    let latestCheckpoint: CheckpointState | null = null;
+    let checkpointAuditFailed = false;
     if (checkpointIds.length === 0) {
       findings.push({
         status: "fail",
         code: "checkpoints:empty",
         message: "No checkpoints were found.",
       });
-    } else if (!state.maintenance.latestCheckpointId || !checkpointIds.includes(state.maintenance.latestCheckpointId)) {
-      findings.push({
-        status: "fail",
-        code: "checkpoints:latest",
-        message: "state.json latestCheckpointId does not reference an existing checkpoint.",
-      });
     } else {
-      const latestCheckpoint = await readLatestCheckpoint(rootDir, state.maintenance.latestCheckpointId);
-      if (!latestCheckpoint) {
+      for (const checkpointId of checkpointIds) {
+        const checkpointPath = join(checkpointsDir, `${checkpointId}.json`);
+        let parsedCheckpoint: unknown;
+
+        try {
+          parsedCheckpoint = JSON.parse(await readFile(checkpointPath, "utf8")) as unknown;
+        } catch (error) {
+          findings.push({
+            status: "fail",
+            code: `checkpoints:read:${checkpointId}`,
+            message: `${checkpointPath} could not be parsed: ${error instanceof Error ? error.message : String(error)}`,
+          });
+          checkpointAuditFailed = true;
+          continue;
+        }
+
+        const checkpointErrors = validateCheckpointShape(parsedCheckpoint);
+        if (checkpointErrors.length > 0) {
+          findings.push({
+            status: "fail",
+            code: `checkpoints:schema:${checkpointId}`,
+            message: `${checkpointPath} failed validation: ${checkpointErrors.join(" ")}`,
+          });
+          checkpointAuditFailed = true;
+          continue;
+        }
+
+        const checkpoint = parsedCheckpoint as CheckpointState;
+        if (checkpoint.id === state.maintenance.latestCheckpointId) {
+          latestCheckpoint = checkpoint;
+        }
+        if (computeBundleHash(checkpoint.bundle) !== checkpoint.bundleHash) {
+          findings.push({
+            status: "fail",
+            code: `checkpoints:bundle-hash:${checkpointId}`,
+            message: `${checkpointPath} bundleHash does not match the stored bundle content.`,
+          });
+          checkpointAuditFailed = true;
+          continue;
+        }
+
+        validCheckpointCount += 1;
+      }
+
+      if (!checkpointAuditFailed) {
+        findings.push({
+          status: "pass",
+          code: "checkpoints:all",
+          message: "All checkpoints are readable and pass schema validation.",
+        });
+      }
+
+      if (!state.maintenance.latestCheckpointId || !checkpointIds.includes(state.maintenance.latestCheckpointId)) {
         findings.push({
           status: "fail",
-          code: "checkpoints:read",
-          message: "The latest checkpoint could not be read.",
+          code: "checkpoints:latest",
+          message: "state.json latestCheckpointId does not reference an existing checkpoint.",
+        });
+      } else if (!latestCheckpoint) {
+        findings.push({
+          status: "fail",
+          code: "checkpoints:latest",
+          message: "state.json latestCheckpointId does not reference a readable checkpoint.",
         });
       } else if (latestCheckpoint.bundleHash !== state.bundleHash) {
         findings.push({
@@ -385,7 +445,7 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
       }
     }
 
-    const queryCoverage = estimateQueryCoverage(state, state.maintenance.historyEventCount, checkpointIds.length > 0);
+    const queryCoverage = estimateQueryCoverage(state, state.maintenance.historyEventCount, validCheckpointCount > 0);
     if (queryCoverage < 5) {
       findings.push({
         status: "warn",

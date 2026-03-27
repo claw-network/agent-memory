@@ -94,6 +94,7 @@ What it does:
 
 - reads unrecalled history events
 - proposes a consolidated bundle
+- previews grouped unrecalled history summary before apply
 - prints summary changes and file diffs
 - applies only after confirmation, unless `--yes` is passed
 
@@ -175,7 +176,7 @@ Use `status` before `recall` when you want a maintenance-oriented readout.
 It shows:
 
 - current state and latest checkpoint id
-- unrecalled backlog counts
+- unrecalled backlog counts plus a grouped summary of unrecalled history
 - source sync health
 - checkpoint drift summary
 - the next suggested action

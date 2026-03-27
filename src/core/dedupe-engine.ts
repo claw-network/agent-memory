@@ -107,6 +107,32 @@ function dedupeFlatStrings(values: string[]): string[] {
   return Array.from(seen.values());
 }
 
+function dedupeSimilarStrings(values: string[], threshold: number): string[] {
+  const deduped = dedupeFlatStrings(values);
+  const result: string[] = [];
+
+  for (const value of deduped) {
+    const existingIndex = result.findIndex((candidate) => {
+      const normalizedCandidate = normalizeText(candidate);
+      const normalizedValue = normalizeText(value);
+      const sameText = normalizedCandidate === normalizedValue;
+      const containedText =
+        normalizedCandidate.includes(normalizedValue) || normalizedValue.includes(normalizedCandidate);
+      const similarText = overlapRatio(candidate, value) >= threshold;
+      return sameText || containedText || similarText;
+    });
+
+    if (existingIndex < 0) {
+      result.push(value);
+      continue;
+    }
+
+    result[existingIndex] = richerString(result[existingIndex], value);
+  }
+
+  return result;
+}
+
 export function dedupeBundle(bundle: AgentMemoryBundle): DeduplicationResult {
   const gotchas = dedupeGotchas(bundle.gotchas);
   const nextSteps = dedupeNextSteps(bundle.nextSteps);
@@ -118,11 +144,11 @@ export function dedupeBundle(bundle: AgentMemoryBundle): DeduplicationResult {
       nextSteps: nextSteps.items,
       currentFocus: {
         ...bundle.currentFocus,
-        currentState: dedupeFlatStrings(bundle.currentFocus.currentState),
-        knownRisks: dedupeFlatStrings(bundle.currentFocus.knownRisks),
+        currentState: dedupeSimilarStrings(bundle.currentFocus.currentState, 0.8),
+        knownRisks: dedupeSimilarStrings(bundle.currentFocus.knownRisks, 0.8),
         validationSnapshot: {
           ...bundle.currentFocus.validationSnapshot,
-          suggestedNextActions: dedupeFlatStrings(bundle.currentFocus.validationSnapshot.suggestedNextActions),
+          suggestedNextActions: dedupeSimilarStrings(bundle.currentFocus.validationSnapshot.suggestedNextActions, 0.8),
         },
       },
     },

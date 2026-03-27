@@ -187,7 +187,7 @@ function buildBundle(provider, prompt) {
 
 function buildRecallBundle(prompt) {
   const currentState = parseJsonBlock(prompt, "CURRENT_STATE_JSON", {});
-  const events = parseJsonBlock(prompt, "UNRECALLED_EVENTS_JSON", []);
+  const events = parseJsonBlock(prompt, "UNRECALLED_EVIDENCE_JSON", parseJsonBlock(prompt, "UNRECALLED_EVENTS_JSON", []));
   const bundle = JSON.parse(JSON.stringify((currentState && currentState.bundle) || {}));
   const gotchaMap = new Map((bundle.gotchas || []).map((gotcha) => [gotcha.title, gotcha]));
   const nextStepMap = new Map((bundle.nextSteps || []).map((step) => [step.title, step]));
@@ -198,11 +198,12 @@ function buildRecallBundle(prompt) {
 
   for (const event of events) {
     const signals = event.signals || {};
+    const sourceLabel = event.sourceId || (Array.isArray(event.sourceIds) && event.sourceIds.length > 0 ? event.sourceIds[0] : event.sourceScopeLabel || "history");
     for (const gotchaTitle of signals.gotchas || []) {
       if (!gotchaMap.has(gotchaTitle)) {
         gotchaMap.set(gotchaTitle, {
           title: gotchaTitle,
-          symptom: "Imported from " + event.sourceId,
+          symptom: "Imported from " + sourceLabel,
           cause: "Derived from external session history.",
           correctPath: "Follow the recalled guidance."
         });
@@ -304,7 +305,7 @@ async function main() {
     payload = JSON.stringify(buildQueryResult(prompt), null, 2);
   } else if (prompt.includes("BEGIN_IMPORT_ITEM_JSON")) {
     payload = JSON.stringify(buildImportedNormalization(prompt), null, 2);
-  } else if (prompt.includes("BEGIN_UNRECALLED_EVENTS_JSON")) {
+  } else if (prompt.includes("BEGIN_UNRECALLED_EVIDENCE_JSON") || prompt.includes("BEGIN_UNRECALLED_EVENTS_JSON")) {
     payload = JSON.stringify(buildRecallBundle(prompt), null, 2);
   } else {
     payload = JSON.stringify(buildBundle(provider, prompt), null, 2);
@@ -439,6 +440,14 @@ function fixturePath(...parts) {
 
 async function readState(projectDir) {
   return JSON.parse(await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8"));
+}
+
+async function writeStateFile(projectDir, state) {
+  await fs.writeFile(
+    path.join(projectDir, ".agent-memory", "state.json"),
+    `${JSON.stringify(state, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 async function readEvents(projectDir) {
@@ -605,6 +614,25 @@ test("query returns an answer with citations and does not mutate files", async (
   assert.equal(await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8"), beforeState);
 });
 
+test("query can answer from imported history events before recall", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const codexImportDir = await createCodexImportSource([
+    {
+      text: "DECISION: Use query cache\nGOTCHA: Query cache grows stale quickly\nNEXT: Add cache ttl docs\nPATH: src/query-cache.ts",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "codex-local", codexImportDir, "--name", "codex-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const result = await runCli(projectDir, ["query", "stale quickly", "--provider=codex", "--scope=history"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /\[event\] evt-000002 event:evt-000002/);
+});
+
 test("import add/list/sync registers sources and deduplicates imported sessions", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
@@ -633,6 +661,33 @@ test("import add/list/sync registers sources and deduplicates imported sessions"
   const state = await readState(projectDir);
   assert.equal(state.maintenance.importSourceCount, 1);
   assert.equal(state.maintenance.historyEventCount, 2);
+});
+
+test("history log stays prefix-stable across update, import sync, and recall", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "DECISION: Use cache layer\nGOTCHA: Reset local cache before query\nNEXT: Write cache playbook\nPATH: src/cache.ts",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const eventsAfterInit = await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8");
+
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const eventsAfterUpdate = await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8");
+  assert.ok(eventsAfterUpdate.startsWith(eventsAfterInit));
+
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  const eventsAfterImport = await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8");
+  assert.ok(eventsAfterImport.startsWith(eventsAfterUpdate));
+
+  assert.equal((await runCli(projectDir, ["recall", "--yes", "--provider=codex", "--source=imports"], providerEnv(providers))).code, 0);
+  const eventsAfterRecall = await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8");
+  assert.ok(eventsAfterRecall.startsWith(eventsAfterImport));
 });
 
 test("import sync handles real fixture snapshots for Claude and Codex local history", async () => {
@@ -769,10 +824,10 @@ test("recall summary reports conservative dedupe merges", async () => {
   const projectDir = await createFixtureProject();
   const claudeImportDir = await createClaudeImportSource([
     {
-      text: "GOTCHA: Reset local cache before query\nNEXT: Write cache playbook\nPATH: src/cache.ts",
+      text: "GOTCHA: Reset local cache before query: refresh branch-local state\nNEXT: Write cache playbook: include reset steps\nPATH: src/cache.ts",
     },
     {
-      text: "GOTCHA: Reset local cache before any query\nNEXT: Write cache playbook docs\nPATH: src/cache.ts",
+      text: "GOTCHA: Reset local cache before query: clear stale entries after branch changes\nNEXT: Write cache playbook: add troubleshooting examples\nPATH: src/cache.ts",
     },
   ]);
 
@@ -784,6 +839,112 @@ test("recall summary reports conservative dedupe merges", async () => {
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /Merged gotchas:/);
   assert.match(result.stdout, /Merged next steps:/);
+});
+
+test("recall preview includes grouped unrecalled history summary", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "GOTCHA: Reset local cache before query: refresh branch-local state\nNEXT: Write cache playbook: include reset steps\nPATH: src/cache.ts",
+    },
+    {
+      text: "GOTCHA: Reset local cache before query: clear stale entries after branch changes\nNEXT: Write cache playbook: add troubleshooting examples\nPATH: src/cache.ts",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const result = await runCli(projectDir, ["recall", "--provider=codex", "--source=imports"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Unrecalled History Summary:/);
+  assert.match(result.stdout, /- raw events: 2/);
+  assert.match(result.stdout, /- grouped items: 1/);
+});
+
+test("recall compresses near-duplicate current focus output deterministically", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "DECISION: Cache layer is enabled for query responses\nVALIDATION: Cache validation is flaky",
+    },
+    {
+      text: "DECISION: Cache layer is enabled for query responses in development\nVALIDATION: Cache validation is flaky in CI",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["recall", "--yes", "--provider=codex", "--source=imports"], providerEnv(providers))).code, 0);
+
+  const state = await readState(projectDir);
+  const decisionLines = state.bundle.currentFocus.currentState.filter((line) =>
+    line.startsWith("Decision: Cache layer is enabled for query responses"),
+  );
+  const riskLines = state.bundle.currentFocus.knownRisks.filter((line) => /cache validation is flaky/i.test(line));
+
+  assert.equal(decisionLines.length, 1);
+  assert.match(decisionLines[0], /development/);
+  assert.equal(riskLines.length, 1);
+  assert.match(riskLines[0], /in CI/);
+});
+
+test("recall groups duplicate local and imported history before provider synthesis", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "GOTCHA: Reset local cache before query\nPATH: src/cache.ts",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const state = await readState(projectDir);
+  state.maintenance.historyEventCount = 3;
+  state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-27T00:00:00.000Z";
+  state.maintenance.recallCursors.all.lastRecalledEventId = "evt-000001";
+  state.maintenance.lastRecalledAt = "2026-03-27T00:00:00.000Z";
+  state.maintenance.lastRecalledEventId = "evt-000001";
+  await writeStateFile(projectDir, state);
+
+  await fs.appendFile(
+    path.join(projectDir, ".agent-memory", "history", "events.jsonl"),
+    `${JSON.stringify({
+      id: "evt-000003",
+      kind: "tool_run",
+      sourceId: "agent-memory.local",
+      externalItemId: null,
+      createdAt: "2026-03-27T00:00:02.000Z",
+      contentHash: "manual-local-history",
+      summary: "Manual local cache reminder",
+      signals: {
+        decisions: [],
+        gotchas: ["Reset local cache before query"],
+        nextStepHints: [],
+        keyPaths: ["src/cache.ts"],
+        validationObservations: [],
+      },
+      sourceRef: "agent-memory:update",
+    })}\n`,
+    "utf8",
+  );
+
+  const result = await runCli(projectDir, ["recall", "--yes", "--provider=codex"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+
+  const afterState = await readState(projectDir);
+  assert.equal(afterState.bundle.currentFocus.summary, "Recalled 1 history event(s).");
+  assert.equal(afterState.maintenance.recallCursors.all.lastRecalledEventId, "evt-000003");
 });
 
 test("validate passes on a healthy initialized project with validation baseline", async () => {
@@ -855,6 +1016,19 @@ test("query citations use stable section and checkpoint identifiers", async () =
   assert.match(result.stdout, /bundle\.currentFocus|bundle\.project|checkpoint:chk-/);
 });
 
+test("query can cite an older checkpoint in state scope", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const result = await runCli(projectDir, ["query", "init focus summary", "--provider=codex", "--scope=state"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /\[checkpoint\] chk-000001 checkpoint:chk-000001/);
+});
+
 test("status reports backlog, source health, checkpoint drift, and suggested next action", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
@@ -875,6 +1049,64 @@ test("status reports backlog, source health, checkpoint drift, and suggested nex
   assert.match(result.stdout, /Sources:/);
   assert.match(result.stdout, /Checkpoint Drift:/);
   assert.match(result.stdout, /Suggested Next Action:/);
+});
+
+test("status summarizes grouped unrecalled history by default", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource([
+    {
+      text: "GOTCHA: Reset local cache before query: refresh branch-local state\nNEXT: Write cache playbook: include reset steps\nPATH: src/cache.ts",
+    },
+    {
+      text: "GOTCHA: Reset local cache before query: clear stale entries after branch changes\nNEXT: Write cache playbook: add troubleshooting examples\nPATH: src/cache.ts",
+    },
+  ]);
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const state = await readState(projectDir);
+  state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-27T00:00:00.000Z";
+  state.maintenance.recallCursors.all.lastRecalledEventId = "evt-000001";
+  state.maintenance.lastRecalledAt = "2026-03-27T00:00:00.000Z";
+  state.maintenance.lastRecalledEventId = "evt-000001";
+  await writeStateFile(projectDir, state);
+
+  const result = await runCli(projectDir, ["status"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Unrecalled Summary:/);
+  assert.match(result.stdout, /- raw events: 2/);
+  assert.match(result.stdout, /- grouped items: 1/);
+});
+
+test("status summary omits grouped items beyond the first five", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const claudeImportDir = await createClaudeImportSource(
+    Array.from({ length: 6 }, (_, index) => ({
+      text: `DECISION: Decision ${index + 1}\nGOTCHA: Unique gotcha ${index + 1}\nNEXT: Unique follow-up ${index + 1}\nPATH: src/feature-${index + 1}.ts`,
+    })),
+  );
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const state = await readState(projectDir);
+  state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-27T00:00:00.000Z";
+  state.maintenance.recallCursors.all.lastRecalledEventId = "evt-000001";
+  state.maintenance.lastRecalledAt = "2026-03-27T00:00:00.000Z";
+  state.maintenance.lastRecalledEventId = "evt-000001";
+  await writeStateFile(projectDir, state);
+
+  const result = await runCli(projectDir, ["status"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /- grouped items: 6/);
+  assert.match(result.stdout, /\.\.\. 1 more grouped items omitted \.\.\./);
 });
 
 test("status can show diff against a specific checkpoint", async () => {
@@ -906,6 +1138,27 @@ test("validate fails when the latest checkpoint is missing", async () => {
   const result = await runCli(projectDir, ["validate"], providerEnv(providers));
   assert.equal(result.code, 1);
   assert.match(result.stdout, /checkpoints:latest/);
+});
+
+test("validate fails when any older checkpoint becomes unreadable", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const checkpoints = await checkpointFiles(projectDir);
+  const firstCheckpointId = checkpoints[0].replace(/\.json$/, "");
+  await fs.writeFile(
+    path.join(projectDir, ".agent-memory", "history", "checkpoints", `${firstCheckpointId}.json`),
+    "{broken checkpoint json}\n",
+    "utf8",
+  );
+
+  const result = await runCli(projectDir, ["validate"], providerEnv(providers));
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, new RegExp(`checkpoints:read:${firstCheckpointId}`));
 });
 
 test("validate warns when recall backlog grows too large", async () => {
@@ -961,4 +1214,31 @@ test("recall, query, and import sync reject an old schema state", async () => {
   const syncResult = await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers));
   assert.equal(syncResult.code, 1);
   assert.match(syncResult.stderr, /Invalid state|schemaVersion/i);
+});
+
+test("core docs consistently describe the destructive rebuild requirement", async () => {
+  const [readme, adoption, overview] = await Promise.all([
+    fs.readFile(path.join(REPO_ROOT, "README.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "adoption.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "overview.md"), "utf8"),
+  ]);
+
+  for (const content of [readme, adoption, overview]) {
+    assert.match(content, /no migration path/i);
+    assert.match(content, /npx agent-memory init/);
+  }
+});
+
+test("commands and roadmap docs describe grouped unrecalled history summaries", async () => {
+  const [readme, commands, roadmap] = await Promise.all([
+    fs.readFile(path.join(REPO_ROOT, "README.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "commands.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "roadmap.md"), "utf8"),
+  ]);
+
+  assert.match(readme, /grouped unrecalled history summary/i);
+  assert.match(commands, /grouped unrecalled history summary/i);
+  assert.match(commands, /grouped summary of unrecalled history/i);
+  assert.match(roadmap, /grouped unrecalled history summaries/i);
+  assert.match(roadmap, /recall input is grouped across local and imported history/i);
 });
