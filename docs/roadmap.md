@@ -80,11 +80,12 @@ Focus on making recall smarter and easier to use:
 
 Focus on making `query` a stronger day-to-day tool:
 
+- staged rollout across retrieval core, natural-language structured queries, and agent-facing outputs
 - richer shortlist ranking across bundle, events, and checkpoints
-- structured query modes such as “what changed”, “what should I do next”, and “what are the known traps”
-- project-specific retrieval prompts or templates
+- natural-language structured questions such as “what changed”, “what should I do next”, and “what are the known traps”
+- project-specific retrieval prompts and templates under `.agent-memory/config.json`
 - better cross-linking between citations and generated projection files
-- optional query outputs for agents, such as JSON-only answer modes
+- optional query outputs for agents, such as `--output=json`
 
 ### Phase 4: Automation And Ecosystem
 

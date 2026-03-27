@@ -244,15 +244,23 @@ function buildRecallBundle(prompt) {
 
 function buildQueryResult(prompt) {
   const question = extractBlock(prompt, "QUERY_QUESTION") || "unknown question";
+  const mode = extractBlock(prompt, "QUERY_MODE") || "answer";
+  const templateInstructions = extractBlock(prompt, "QUERY_TEMPLATE_INSTRUCTIONS") || "";
+  const templateHint = templateInstructions
+    .split(/\\r?\\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
   const shortlist = parseJsonBlock(prompt, "QUERY_SHORTLIST_JSON", []);
   return {
-    answer: "Answer for: " + question,
-    why: "Built from " + shortlist.length + " shortlisted memory items.",
+    mode,
+    answer: mode.toUpperCase() + " answer for: " + question,
+    why: "Built from " + shortlist.length + " shortlisted memory items." + (templateHint ? " Template: " + templateHint : ""),
     citations: shortlist.slice(0, 2).map((item) => ({
       sourceType: item.sourceType,
       sourceId: item.sourceId,
       pathOrSection: item.pathOrSection,
-      summary: item.summary
+      summary: item.summary,
+      projectionPath: null
     }))
   };
 }
@@ -610,8 +618,47 @@ test("query returns an answer with citations and does not mutate files", async (
   const result = await runCli(projectDir, ["query", "package workflow", "--provider=codex", "--scope=all"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /Answer:/);
+  assert.match(result.stdout, /Mode: answer/);
   assert.match(result.stdout, /Citations:/);
   assert.equal(await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8"), beforeState);
+});
+
+test("query detects changes mode from natural language and prioritizes recent checkpoint evidence", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const result = await runCli(projectDir, ["query", "what changed recently?", "--provider=codex", "--scope=all"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Mode: changes/);
+  assert.match(result.stdout, /\[checkpoint\] chk-000002 checkpoint:chk-000002/);
+});
+
+test("query detects next mode from natural language and links bundle citations to projection docs", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const result = await runCli(projectDir, ["query", "what should I do next?", "--provider=codex", "--scope=state"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Mode: next/);
+  assert.match(result.stdout, /docs\/agent-memory\/next-steps\.md|docs\/agent-memory\/current-focus\.md/);
+});
+
+test("query detects traps mode from natural language", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const result = await runCli(projectDir, ["query", "what are the known traps?", "--provider=codex", "--scope=state"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Mode: traps/);
+  assert.match(result.stdout, /docs\/agent-memory\/gotchas\.md/);
 });
 
 test("query can answer from imported history events before recall", async () => {
@@ -1029,6 +1076,52 @@ test("query can cite an older checkpoint in state scope", async () => {
   assert.match(result.stdout, /\[checkpoint\] chk-000001 checkpoint:chk-000001/);
 });
 
+test("query supports json output for agents", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const result = await runCli(projectDir, ["query", "what should I do next?", "--provider=codex", "--output=json"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.mode, "next");
+  assert.equal(typeof parsed.answer, "string");
+  assert.ok(Array.isArray(parsed.citations));
+  assert.ok(parsed.citations.every((citation) => Object.prototype.hasOwnProperty.call(citation, "projectionPath")));
+});
+
+test("query honors config defaultOutput when --output is omitted", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const config = await readConfig(projectDir);
+  config.query.defaultOutput = "json";
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  const result = await runCli(projectDir, ["query", "what changed recently?", "--provider=codex"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.mode, "changes");
+});
+
+test("query uses project-specific template overrides from config", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const config = await readConfig(projectDir);
+  config.query.templates.next.instructions = "Use TEMPLATE NEXT OVERRIDE.";
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  const result = await runCli(projectDir, ["query", "what should I do next?", "--provider=codex"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Template: Use TEMPLATE NEXT OVERRIDE\./);
+});
+
 test("status reports backlog, source health, checkpoint drift, and suggested next action", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
@@ -1241,4 +1334,20 @@ test("commands and roadmap docs describe grouped unrecalled history summaries", 
   assert.match(commands, /grouped summary of unrecalled history/i);
   assert.match(roadmap, /grouped unrecalled history summaries/i);
   assert.match(roadmap, /recall input is grouped across local and imported history/i);
+});
+
+test("query docs describe natural-language retrieval, json output, and projection links", async () => {
+  const [readme, commands, roadmap] = await Promise.all([
+    fs.readFile(path.join(REPO_ROOT, "README.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "commands.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "roadmap.md"), "utf8"),
+  ]);
+
+  assert.match(readme, /--output=json/);
+  assert.match(commands, /--output=json/);
+  assert.match(readme, /natural-language/i);
+  assert.match(commands, /natural-language/i);
+  assert.match(readme, /projection docs|projection doc/i);
+  assert.match(commands, /projection docs|projection doc/i);
+  assert.match(roadmap, /natural-language structured questions|natural language structured questions/i);
 });

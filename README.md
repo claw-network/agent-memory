@@ -107,9 +107,18 @@ If no unrecalled events produced durable changes, `recall` exits with a clear no
 npx agent-memory query "how does caching work?"
 ```
 
-Returns a short answer plus citations from bundle sections, history events, and checkpoints.
+Returns a short answer plus citations from bundle sections, history events, and checkpoints. Natural-language structured questions such as `what changed recently?`, `what should I do next?`, and `what are the known traps?` are supported through the same command.
 
 If current memory cannot support a confident answer, `query` now returns an explicit evidence-insufficient response instead of bluffing.
+
+For agent-facing automation you can request JSON output:
+
+```bash
+npx agent-memory query "what changed recently?" --output=json
+```
+
+Bundle citations can also be cross-linked to the generated projection docs under `docs/agent-memory/`.
+Projects can override retrieval instructions per query mode through `.agent-memory/config.json`.
 
 ### Import external sessions
 

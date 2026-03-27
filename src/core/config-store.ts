@@ -13,6 +13,23 @@ const DEFAULT_CONFIG: AgentMemoryConfig = {
       showDiffByDefault: false,
     },
   },
+  query: {
+    defaultOutput: "text",
+    templates: {
+      answer: {
+        instructions: "Answer the question directly using the strongest available evidence. Prefer clarity over exhaustiveness.",
+      },
+      changes: {
+        instructions: "Summarize the most relevant recent changes first. Prefer recent checkpoints and history events over static project structure.",
+      },
+      next: {
+        instructions: "Recommend the most relevant next actions first. Prefer concrete follow-ups and suggested actions over general descriptions.",
+      },
+      traps: {
+        instructions: "Highlight the most relevant gotchas, pitfalls, and risky areas first. Prefer durable warnings over generic cautionary advice.",
+      },
+    },
+  },
 };
 
 function configPath(rootDir: string): string {
@@ -52,6 +69,30 @@ export async function readConfig(rootDir: string): Promise<AgentMemoryConfig> {
       preview: {
         ...DEFAULT_CONFIG.recall.preview,
         ...(config.recall?.preview ?? {}),
+      },
+    },
+    query: {
+      ...DEFAULT_CONFIG.query,
+      ...(config.query ?? {}),
+      templates: {
+        ...DEFAULT_CONFIG.query.templates,
+        ...(config.query?.templates ?? {}),
+        answer: {
+          ...DEFAULT_CONFIG.query.templates.answer,
+          ...(config.query?.templates?.answer ?? {}),
+        },
+        changes: {
+          ...DEFAULT_CONFIG.query.templates.changes,
+          ...(config.query?.templates?.changes ?? {}),
+        },
+        next: {
+          ...DEFAULT_CONFIG.query.templates.next,
+          ...(config.query?.templates?.next ?? {}),
+        },
+        traps: {
+          ...DEFAULT_CONFIG.query.templates.traps,
+          ...(config.query?.templates?.traps ?? {}),
+        },
       },
     },
   };

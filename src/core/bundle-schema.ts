@@ -8,6 +8,8 @@ import type {
   HistorySignalSet,
   HistorySource,
   QueryResult,
+  QueryMode,
+  QueryOutputFormat,
   ValidationSnapshotStatus,
   ValidationRunStatus,
 } from "../types";
@@ -92,6 +94,14 @@ function validateValidationSnapshotStatus(
   errors: string[],
 ): ValidationSnapshotStatus | null {
   return expectEnum(value, ["not-run", "passed", "failed", "mixed"] as const, path, errors);
+}
+
+function validateQueryMode(value: unknown, path: string, errors: string[]): QueryMode | null {
+  return expectEnum(value, ["answer", "changes", "next", "traps"] as const, path, errors);
+}
+
+function validateQueryOutputFormat(value: unknown, path: string, errors: string[]): QueryOutputFormat | null {
+  return expectEnum(value, ["text", "json"] as const, path, errors);
 }
 
 function validateValidationCommand(value: unknown, path: string, errors: string[]): void {
@@ -356,6 +366,7 @@ export function validateQueryResultShape(value: unknown): string[] {
     return errors;
   }
 
+  validateQueryMode(result.mode, "query.mode", errors);
   expectString(result.answer, "query.answer", errors);
   expectString(result.why, "query.why", errors);
 
@@ -374,6 +385,7 @@ export function validateQueryResultShape(value: unknown): string[] {
     expectString(citation.sourceId, `query.citations[${index}].sourceId`, errors);
     expectString(citation.pathOrSection, `query.citations[${index}].pathOrSection`, errors);
     expectString(citation.summary, `query.citations[${index}].summary`, errors);
+    expectNullableString(citation.projectionPath, `query.citations[${index}].projectionPath`, errors);
   }
 
   return errors;
@@ -477,6 +489,35 @@ export function validateConfigShape(value: unknown): string[] {
   const preview = expectRecord(recall.preview, "config.recall.preview", errors);
   if (preview && typeof preview.showDiffByDefault !== "boolean") {
     errors.push("config.recall.preview.showDiffByDefault must be a boolean.");
+  }
+
+  if (config.query !== undefined) {
+    const query = expectRecord(config.query, "config.query", errors);
+    if (query) {
+      if (query.defaultOutput !== undefined) {
+        validateQueryOutputFormat(query.defaultOutput, "config.query.defaultOutput", errors);
+      }
+
+      if (query.templates !== undefined) {
+        const templates = expectRecord(query.templates, "config.query.templates", errors);
+        if (templates) {
+          for (const mode of ["answer", "changes", "next", "traps"] as const) {
+            if (templates[mode] === undefined) {
+              continue;
+            }
+
+            const template = expectRecord(templates[mode], `config.query.templates.${mode}`, errors);
+            if (!template) {
+              continue;
+            }
+
+            if (template.instructions !== undefined) {
+              expectString(template.instructions, `config.query.templates.${mode}.instructions`, errors);
+            }
+          }
+        }
+      }
+    }
   }
 
   return errors;
@@ -684,8 +725,9 @@ export const bundleOutputSchema: Record<string, unknown> = {
 export const queryOutputSchema: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: ["answer", "why", "citations"],
+  required: ["mode", "answer", "why", "citations"],
   properties: {
+    mode: { type: "string", enum: ["answer", "changes", "next", "traps"] },
     answer: { type: "string" },
     why: { type: "string" },
     citations: {
@@ -693,12 +735,15 @@ export const queryOutputSchema: Record<string, unknown> = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["sourceType", "sourceId", "pathOrSection", "summary"],
+        required: ["sourceType", "sourceId", "pathOrSection", "summary", "projectionPath"],
         properties: {
           sourceType: { type: "string", enum: ["bundle", "event", "checkpoint"] },
           sourceId: { type: "string" },
           pathOrSection: { type: "string" },
           summary: { type: "string" },
+          projectionPath: {
+            anyOf: [{ type: "string" }, { type: "null" }],
+          },
         },
       },
     },

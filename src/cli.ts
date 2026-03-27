@@ -8,7 +8,7 @@ import { runRecall } from "./commands/recall";
 import { runStatus } from "./commands/status";
 import { runUpdate } from "./commands/update";
 import { runValidate } from "./commands/validate";
-import type { ProviderPreference, QueryScope, RecallPolicy, RecallSection, RecallSourceScope } from "./types";
+import type { ProviderPreference, QueryOutputFormat, QueryScope, RecallPolicy, RecallSection, RecallSourceScope } from "./types";
 
 interface CommonArgs {
   yes: boolean;
@@ -23,7 +23,7 @@ function printHelp(): void {
   console.log("  agent-memory init [--yes] [--validate] [--provider=auto|codex|claude]");
   console.log("  agent-memory update [--yes] [--validate] [--provider=auto|codex|claude]");
   console.log("  agent-memory recall [--yes] [--provider=auto|codex|claude] [--source=all|local|imports]");
-  console.log("  agent-memory query <question> [--provider=auto|codex|claude] [--scope=state|history|all]");
+  console.log("  agent-memory query <question> [--provider=auto|codex|claude] [--scope=state|history|all] [--output=text|json]");
   console.log("  agent-memory import add <type> <path> [--name <id>]");
   console.log("  agent-memory import sync [<id>|--all] [--provider=auto|codex|claude]");
   console.log("  agent-memory import list");
@@ -86,6 +86,14 @@ function parseQueryScope(value: string): QueryScope {
   }
 
   throw new Error(`Unknown query scope: ${value}`);
+}
+
+function parseQueryOutputFormat(value: string): QueryOutputFormat {
+  if (value === "text" || value === "json") {
+    return value;
+  }
+
+  throw new Error(`Unknown query output format: ${value}`);
 }
 
 function parseCommonFlags(argv: string[]): { rest: string[]; common: CommonArgs } {
@@ -261,6 +269,7 @@ async function main(): Promise<void> {
     case "query": {
       let provider: ProviderPreference = "auto";
       let scope: QueryScope = "all";
+      let output: QueryOutputFormat | null = null;
       const questionParts: string[] = [];
       const remaining = [...restArgs];
       while (remaining.length > 0) {
@@ -297,6 +306,20 @@ async function main(): Promise<void> {
           continue;
         }
 
+        if (value.startsWith("--output=")) {
+          output = parseQueryOutputFormat(value.slice("--output=".length));
+          continue;
+        }
+
+        if (value === "--output") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --output");
+          }
+          output = parseQueryOutputFormat(next);
+          continue;
+        }
+
         if (value.startsWith("--")) {
           throw new Error(`Unknown argument: ${value}`);
         }
@@ -314,6 +337,7 @@ async function main(): Promise<void> {
         provider,
         scope,
         question,
+        output,
       });
       if (code !== 0) {
         exit(code);

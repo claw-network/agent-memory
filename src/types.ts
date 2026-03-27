@@ -9,6 +9,8 @@ export type ValidationSnapshotStatus = "not-run" | "passed" | "failed" | "mixed"
 export type HistoryEventKind = "tool_run" | "imported_session";
 export type RecallSourceScope = "all" | "local" | "imports";
 export type QueryScope = "state" | "history" | "all";
+export type QueryMode = "answer" | "changes" | "next" | "traps";
+export type QueryOutputFormat = "text" | "json";
 export type CitationSourceType = "bundle" | "event" | "checkpoint";
 export type SourceSyncStatus = "never" | "passed" | "failed";
 export type RecallSection =
@@ -173,6 +175,23 @@ export interface AgentMemoryConfig {
       showDiffByDefault: boolean;
     };
   };
+  query: {
+    defaultOutput: QueryOutputFormat;
+    templates: {
+      answer: {
+        instructions: string;
+      };
+      changes: {
+        instructions: string;
+      };
+      next: {
+        instructions: string;
+      };
+      traps: {
+        instructions: string;
+      };
+    };
+  };
 }
 
 export interface AgentMemoryState {
@@ -248,6 +267,7 @@ export interface QueryOptions {
   provider: ProviderPreference;
   scope: QueryScope;
   question: string;
+  output: QueryOutputFormat | null;
 }
 
 export interface ImportAddOptions {
@@ -400,9 +420,11 @@ export interface Citation {
   sourceId: string;
   pathOrSection: string;
   summary: string;
+  projectionPath: string | null;
 }
 
 export interface QueryResult {
+  mode: QueryMode;
   answer: string;
   why: string;
   citations: Citation[];
@@ -415,6 +437,17 @@ export interface QueryShortlistItem {
   summary: string;
   content: string;
   createdAt: string | null;
+  projectionPath: string | null;
+  category:
+    | "project"
+    | "project-map"
+    | "current-focus"
+    | "suggested-action"
+    | "gotcha"
+    | "next-step"
+    | "event"
+    | "checkpoint";
+  tags: QueryMode[];
 }
 
 export interface StatusReport {

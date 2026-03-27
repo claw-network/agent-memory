@@ -121,14 +121,23 @@ Use `query` to retrieve an answer from the memory system.
 What it does:
 
 - builds a shortlist from bundle, history, and checkpoints
+- detects natural-language retrieval modes such as changes, next actions, and traps
 - synthesizes a short answer
-- returns citations for each claim
+- returns citations for each claim, with bundle citations cross-linked to projection docs when applicable
 
 Optional scope:
 
 ```bash
 npx agent-memory query "what changed recently?" --scope=history
 ```
+
+Optional output:
+
+```bash
+npx agent-memory query "what should I do next?" --output=json
+```
+
+Projects can also override mode-specific retrieval instructions through `.agent-memory/config.json`.
 
 ## `agent-memory import`
 
