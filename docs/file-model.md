@@ -7,6 +7,7 @@ The source of truth is no longer just one generated markdown layer. The canonica
 - `/.agent-memory/state.json`
 - `/.agent-memory/history/events.jsonl`
 - `/.agent-memory/history/checkpoints/*.json`
+- `/.agent-memory/archive/`
 - `/.agent-memory/sources.json`
 - `/.agent-memory/config.json`
 
@@ -48,7 +49,7 @@ Operational metadata for the memory system:
 
 ## `history/events.jsonl`
 
-This is an append-only event stream.
+This is the active event stream.
 
 Each event is normalized into one of two kinds:
 
@@ -73,6 +74,8 @@ Each event carries:
 - `keyPaths`
 - `validationObservations`
 
+Retention can later archive older recalled events out of the active log. Archived events do not participate in active retrieval or consolidation.
+
 ## `history/checkpoints/`
 
 Each checkpoint stores a snapshot of the canonical bundle after a meaningful write.
@@ -83,6 +86,26 @@ This gives the system:
 - a baseline for `status` checkpoint drift summaries
 - a retrievable memory layer for `query`
 - a structural integrity target for `validate`
+
+Retention can later archive older checkpoints out of the active checkpoint set while always preserving the latest checkpoint and the configured recent tail.
+
+## `archive/`
+
+This is the archive-first retention layer.
+
+Each batch lives under:
+
+- `/.agent-memory/archive/prune-<timestamp>/manifest.json`
+- `/.agent-memory/archive/prune-<timestamp>/events.jsonl`
+- `/.agent-memory/archive/prune-<timestamp>/checkpoints/*.json`
+
+Archive batches are written by automation-only pruning.
+
+Archived data:
+
+- is copied out of the active history/checkpoint store first
+- does not participate in active `query`, `recall`, or `status`
+- can later expire from the archive on a longer window
 
 ## `sources.json`
 
@@ -104,13 +127,24 @@ Each source records:
 
 This is the project-level recall and maintenance configuration.
 
-Phase 2 keeps it intentionally small:
+The config now covers recall, retrieval, automation, and retention:
 
 - `recall.defaultSection`
 - `recall.defaultSource`
 - `recall.policy`
 - `recall.backlogWarnThreshold`
 - `recall.preview.showDiffByDefault`
+- `query.defaultOutput`
+- `query.templates.*.instructions`
+- `automation.intervalMinutes`
+- `automation.provider`
+- `automation.importSyncBeforeRecall`
+- `automation.autoRecall`
+- `retention.enabled`
+- `retention.history.maxAgeDays`
+- `retention.checkpoints.maxAgeDays`
+- `retention.checkpoints.keepRecent`
+- `retention.archive.expireAfterDays`
 
 CLI flags can still override these defaults for a single command run.
 

@@ -6,6 +6,7 @@ import { readConfig } from "./config-store";
 import { listRegisteredSources, syncSources } from "./import-framework";
 import { readHistoryEvents, readLatestCheckpoint, readSources } from "./history-store";
 import { applyRecall, prepareRecall } from "./recall-orchestrator";
+import { runRetentionCycle } from "./retention-orchestrator";
 import { readState, writeState } from "./state-store";
 import {
   acquireAutomationLock,
@@ -49,6 +50,14 @@ function createRunResult(provider: ProviderPreference): AutomationRunResult {
       rawEventCount: 0,
       groupedItemCount: 0,
       noopReason: null,
+    },
+    prune: {
+      attempted: false,
+      archivedEventCount: 0,
+      archivedCheckpointCount: 0,
+      expiredArchiveBatchCount: 0,
+      archiveBatchPath: null,
+      skippedReason: null,
     },
     errors: [],
     warnings: [],
@@ -173,6 +182,10 @@ export async function runAutomationCycle(rootDir: string): Promise<AutomationRun
         }
       }
     }
+
+    const retentionResult = await runRetentionCycle(rootDir);
+    result.prune = retentionResult.prune;
+    result.warnings.push(...retentionResult.warnings);
 
     if (result.status === "idle" && result.importSync.attempted) {
       const importedCount = countImported(result.importSync.results);

@@ -45,6 +45,11 @@ test("readConfig supplies automation defaults and merges partial overrides", asy
   assert.equal(config.automation.provider, "claude");
   assert.equal(config.automation.importSyncBeforeRecall, true);
   assert.equal(config.automation.autoRecall, true);
+  assert.equal(config.retention.enabled, true);
+  assert.equal(config.retention.history.maxAgeDays, 90);
+  assert.equal(config.retention.checkpoints.maxAgeDays, 30);
+  assert.equal(config.retention.checkpoints.keepRecent, 10);
+  assert.equal(config.retention.archive.expireAfterDays, 180);
 });
 
 test("acquireAutomationLock recovers stale locks", async () => {
@@ -73,6 +78,14 @@ test("validateAutomationRunResultShape accepts idle, recalled, and failed status
       rawEventCount: 0,
       groupedItemCount: 0,
       noopReason: null,
+    },
+    prune: {
+      attempted: true,
+      archivedEventCount: 0,
+      archivedCheckpointCount: 0,
+      expiredArchiveBatchCount: 0,
+      archiveBatchPath: null,
+      skippedReason: "No prune candidates or expired archive batches were found.",
     },
     errors: [],
     warnings: [],

@@ -21,6 +21,7 @@ import {
 import { getConfigPath, readConfig } from "./config-store";
 import { isSupportedSourceType } from "./import-framework";
 import { getCheckpointsDir, getEventsPath, getSourcesPath, listCheckpointIds, readHistoryEvents, readSources } from "./history-store";
+import { getArchiveDir, listArchiveBatchSummaries, validateArchiveBatchManifestShape } from "./retention-orchestrator";
 import { computeBundleHash, getStatePath } from "./state-store";
 import type { AgentMemoryState, AuditFinding, CheckpointState } from "../types";
 
@@ -82,6 +83,8 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
   const statePath = getStatePath(rootDir);
   const configPath = getConfigPath(rootDir);
   let configuredBacklogThreshold = RECALL_WARN_EVENT_COUNT;
+  let configuredRetentionEnabled = true;
+  let configuredArchiveExpireAfterDays = 180;
 
   if (!(await exists(statePath))) {
     findings.push({
@@ -173,9 +176,14 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
     });
 
     try {
-      configuredBacklogThreshold = (await readConfig(rootDir)).recall.backlogWarnThreshold;
+      const config = await readConfig(rootDir);
+      configuredBacklogThreshold = config.recall.backlogWarnThreshold;
+      configuredRetentionEnabled = config.retention.enabled;
+      configuredArchiveExpireAfterDays = config.retention.archive.expireAfterDays;
     } catch {
       configuredBacklogThreshold = RECALL_WARN_EVENT_COUNT;
+      configuredRetentionEnabled = true;
+      configuredArchiveExpireAfterDays = 180;
     }
   }
 
@@ -200,6 +208,7 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
     }
     let historyValid = true;
     let previousOrdinal = 0;
+    let historyHasGaps = false;
     for (const event of events) {
       const errors = validateHistoryEventShape(event);
       if (errors.length > 0) {
@@ -213,24 +222,37 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
       }
 
       const ordinal = parseEventOrdinal(event.id);
-      if (ordinal !== previousOrdinal + 1) {
+      if (ordinal <= previousOrdinal) {
         findings.push({
           status: "fail",
-          code: "history:continuity",
-          message: `Event ids are not continuous around ${event.id}.`,
+          code: "history:ordering",
+          message: `Event ids are not strictly increasing around ${event.id}.`,
         });
         historyValid = false;
         break;
+      }
+      if (previousOrdinal > 0 && ordinal !== previousOrdinal + 1) {
+        historyHasGaps = true;
       }
       previousOrdinal = ordinal;
     }
 
     if (historyValid) {
-      findings.push({
-        status: "pass",
-        code: "history:events",
-        message: "History events are readable, continuous, and preserve append-only ordering.",
-      });
+      if (historyHasGaps && !configuredRetentionEnabled) {
+        findings.push({
+          status: "fail",
+          code: "history:continuity",
+          message: "History event ids contain gaps while retention is disabled.",
+        });
+      } else {
+        findings.push({
+          status: "pass",
+          code: "history:events",
+          message: historyHasGaps
+            ? "History events are readable, ordered, and retention gaps are present in the active log."
+            : "History events are readable, continuous, and preserve append-only ordering.",
+        });
+      }
     }
 
     if (state.maintenance.historyEventCount !== events.length) {
@@ -653,6 +675,76 @@ export async function validateMemory(rootDir: string): Promise<AuditFinding[]> {
         code: "automation:lock:read",
         message: `Automation lock metadata could not be parsed: ${error instanceof Error ? error.message : String(error)}`,
       });
+    }
+  }
+
+  const archiveDir = getArchiveDir(rootDir);
+  if (await exists(archiveDir)) {
+    let archiveBatches;
+    try {
+      archiveBatches = await listArchiveBatchSummaries(rootDir);
+    } catch (error) {
+      findings.push({
+        status: "warn",
+        code: "archive:read",
+        message: `Archive directory could not be inspected: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      return findings;
+    }
+
+    for (const batch of archiveBatches) {
+      const manifestPath = join(archiveDir, batch.batchId, "manifest.json");
+      if (!batch.manifest) {
+        findings.push({
+          status: "warn",
+          code: `archive:manifest:${batch.batchId}`,
+          message: `${manifestPath} is missing or unreadable.`,
+        });
+        continue;
+      }
+
+      const manifestErrors = validateArchiveBatchManifestShape(batch.manifest);
+      if (manifestErrors.length > 0) {
+        findings.push({
+          status: "warn",
+          code: `archive:manifest:${batch.batchId}:schema`,
+          message: `${manifestPath} failed validation: ${manifestErrors.join(" ")}`,
+        });
+      } else {
+        findings.push({
+          status: "pass",
+          code: `archive:manifest:${batch.batchId}`,
+          message: `${manifestPath} is readable.`,
+        });
+      }
+
+      const archivedEventsPath = join(archiveDir, batch.batchId, "events.jsonl");
+      const archivedCheckpointsDir = join(archiveDir, batch.batchId, "checkpoints");
+      if (!(await exists(archivedEventsPath))) {
+        findings.push({
+          status: "warn",
+          code: `archive:events:${batch.batchId}`,
+          message: `${archivedEventsPath} is missing.`,
+        });
+      }
+      if (!(await exists(archivedCheckpointsDir))) {
+        findings.push({
+          status: "warn",
+          code: `archive:checkpoints:${batch.batchId}`,
+          message: `${archivedCheckpointsDir} is missing.`,
+        });
+      }
+
+      if (isValidIsoTimestamp(batch.manifest.createdAt)) {
+        const createdAtMs = Date.parse(batch.manifest.createdAt);
+        if (createdAtMs + configuredArchiveExpireAfterDays * 24 * 60 * 60 * 1000 < Date.now()) {
+          findings.push({
+            status: "warn",
+            code: `archive:expiry:${batch.batchId}`,
+            message: `Archive batch ${batch.batchId} is older than the configured expiry window and should have been removed.`,
+          });
+        }
+      }
     }
   }
 

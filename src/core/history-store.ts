@@ -1,6 +1,6 @@
 import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { computeContentHash, stableStringify } from "./state-store";
+import { computeContentHash, readStateIfPresent, stableStringify } from "./state-store";
 import type {
   CheckpointState,
   HistoryEvent,
@@ -32,6 +32,11 @@ function formatNumericId(prefix: string, value: number): string {
 
 function maxEventOrdinal(events: HistoryEvent[]): number {
   return events.reduce((max, event) => Math.max(max, parseNumericId(event.id, EVENT_ID_PREFIX)), 0);
+}
+
+async function eventOrdinalFloor(rootDir: string): Promise<number> {
+  const state = await readStateIfPresent(rootDir).catch(() => null);
+  return Math.max(0, parseNumericId(state?.maintenance.lastRecalledEventId ?? "", EVENT_ID_PREFIX));
 }
 
 export function getHistoryDir(rootDir: string): string {
@@ -77,6 +82,13 @@ export async function appendHistoryEvents(rootDir: string, events: HistoryEvent[
   const path = getEventsPath(rootDir);
   const existing = (await exists(path)) ? await readFile(path, "utf8") : "";
   const next = `${existing}${events.map((event) => JSON.stringify(event)).join("\n")}\n`;
+  await writeFile(path, next, "utf8");
+}
+
+export async function writeHistoryEvents(rootDir: string, events: HistoryEvent[]): Promise<void> {
+  await ensureHistoryLayout(rootDir);
+  const path = getEventsPath(rootDir);
+  const next = `${events.map((event) => JSON.stringify(event)).join("\n")}${events.length > 0 ? "\n" : ""}`;
   await writeFile(path, next, "utf8");
 }
 
@@ -160,12 +172,12 @@ export async function readRecentCheckpoints(rootDir: string, limit: number): Pro
 
 export async function nextEventId(rootDir: string): Promise<string> {
   const events = await readHistoryEvents(rootDir);
-  const next = maxEventOrdinal(events) + 1;
+  const next = Math.max(maxEventOrdinal(events), await eventOrdinalFloor(rootDir)) + 1;
   return formatNumericId(EVENT_ID_PREFIX, next);
 }
 
-export function createEventIdAllocator(existingEvents: HistoryEvent[]): () => string {
-  let next = maxEventOrdinal(existingEvents) + 1;
+export function createEventIdAllocator(existingEvents: HistoryEvent[], floor = 0): () => string {
+  let next = Math.max(maxEventOrdinal(existingEvents), floor) + 1;
   return () => {
     const id = formatNumericId(EVENT_ID_PREFIX, next);
     next += 1;

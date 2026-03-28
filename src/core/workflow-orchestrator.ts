@@ -124,6 +124,19 @@ function maintainChangedFiles(result: Awaited<ReturnType<typeof runAutomationCyc
     );
   }
 
+  if (result.prune.archivedEventCount > 0 || result.prune.archivedCheckpointCount > 0) {
+    changed.push(
+      ".agent-memory/archive/",
+      ".agent-memory/history/events.jsonl",
+      ".agent-memory/history/checkpoints/",
+      ".agent-memory/state.json",
+    );
+  }
+
+  if (result.prune.expiredArchiveBatchCount > 0) {
+    changed.push(".agent-memory/archive/");
+  }
+
   return uniqueStrings(changed);
 }
 
@@ -132,18 +145,24 @@ function maintainSummary(
   result: Awaited<ReturnType<typeof runAutomationCycle>>,
 ): string {
   const daemonClause = ensureStarted ? "The daemon was started first." : "The daemon was already available.";
+  const pruneClause =
+    result.prune.archivedEventCount > 0 || result.prune.archivedCheckpointCount > 0
+      ? ` Retention archived ${result.prune.archivedEventCount} event(s) and ${result.prune.archivedCheckpointCount} checkpoint(s).`
+      : (result.prune.expiredArchiveBatchCount > 0
+        ? ` Retention expired ${result.prune.expiredArchiveBatchCount} archive batch(es).`
+        : "");
   switch (result.status) {
     case "recalled":
-      return `Maintenance completed and applied recalled memory changes. ${daemonClause}`;
+      return `Maintenance completed and applied recalled memory changes. ${daemonClause}${pruneClause}`;
     case "recalled_noop":
-      return `Maintenance completed and checked recall, but no durable memory update was needed. ${daemonClause}`;
+      return `Maintenance completed and checked recall, but no durable memory update was needed. ${daemonClause}${pruneClause}`;
     case "imported":
-      return `Maintenance completed after syncing external sources. ${daemonClause}`;
+      return `Maintenance completed after syncing external sources. ${daemonClause}${pruneClause}`;
     case "failed":
-      return `Maintenance failed after attempting a sync/recall cycle. ${daemonClause}`;
+      return `Maintenance failed after attempting a sync/recall cycle. ${daemonClause}${pruneClause}`;
     case "idle":
     default:
-      return `Maintenance completed and there was nothing new to sync or recall. ${daemonClause}`;
+      return `Maintenance completed and there was nothing new to sync or recall. ${daemonClause}${pruneClause}`;
   }
 }
 
@@ -158,6 +177,10 @@ function maintainSuggestedNextAction(result: Awaited<ReturnType<typeof runAutoma
 
   if (result.recall.noopReason) {
     return "No immediate action is required.";
+  }
+
+  if (result.prune.archivedEventCount > 0 || result.prune.archivedCheckpointCount > 0) {
+    return "Review `agent-memory status` if you want to inspect the current archive and prune baseline.";
   }
 
   if (result.importSync.attempted && result.importSync.results.some((entry) => entry.failedCount > 0)) {
@@ -213,6 +236,13 @@ export async function buildMemoryAssessWorkflow(rootDir: string): Promise<Memory
     ...findings.filter((finding) => finding.status === "warn").slice(0, 3).map((finding) => `${finding.code}: ${finding.message}`),
     ...integration.warnings,
     ...((!automation.running) ? [automationSummary] : []),
+    ...(
+      statusReport.retention.pruneCandidateEventCount + statusReport.retention.pruneCandidateCheckpointCount > 0
+        ? [
+            `Retention candidates: ${statusReport.retention.pruneCandidateEventCount} event(s), ${statusReport.retention.pruneCandidateCheckpointCount} checkpoint(s).`,
+          ]
+        : []
+    ),
   ]);
   const errors = findings.filter((finding) => finding.status === "fail").map((finding) => `${finding.code}: ${finding.message}`);
 
@@ -223,6 +253,8 @@ export async function buildMemoryAssessWorkflow(rootDir: string): Promise<Memory
     suggestedNextAction = "Run `agent-memory automate ensure-running` to restore the background daemon.";
   } else if (!integration.healthy) {
     suggestedNextAction = integration.suggestedNextAction;
+  } else if (statusReport.retention.pruneCandidateEventCount + statusReport.retention.pruneCandidateCheckpointCount > 0) {
+    suggestedNextAction = "Run `agent-memory automate run-once` to archive aged history and checkpoints.";
   }
 
   return {
@@ -251,6 +283,7 @@ export async function buildMemoryAssessWorkflow(rootDir: string): Promise<Memory
         healthy: integration.healthy,
       },
       validate: validationSummary,
+      retention: statusReport.retention,
     },
     warnings,
     errors,
@@ -281,6 +314,7 @@ export async function runMemoryMaintainWorkflow(rootDir: string): Promise<Memory
         recallApplied: result.recall.applied,
         groupedItemCount: result.recall.groupedItemCount,
       },
+      prune: result.prune,
       changedFiles: maintainChangedFiles(result),
       latestRunPath: ".agent-memory/automation/latest-run.json",
     },
@@ -333,6 +367,12 @@ export async function buildMemoryCompactHandoffWorkflow(rootDir: string): Promis
       topNextSteps: topNextSteps(state.bundle.nextSteps),
       unrecalledGroupedCount: statusReport.unrecalledSummary.groupedItemCount,
       automationSummary,
+      retentionSummary:
+        statusReport.retention.pruneCandidateEventCount + statusReport.retention.pruneCandidateCheckpointCount > 0
+          ? `Retention currently has ${statusReport.retention.pruneCandidateEventCount} event candidate(s) and ${statusReport.retention.pruneCandidateCheckpointCount} checkpoint candidate(s).`
+          : (statusReport.retention.archiveBatchCount > 0
+            ? `Retention archive has ${statusReport.retention.archiveBatchCount} batch(es); oldest is ${statusReport.retention.oldestArchiveCreatedAt ?? "unknown"}.`
+            : "No retention action is currently pending."),
       recommendedResumeActions,
     },
     warnings,

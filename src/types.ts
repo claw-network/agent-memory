@@ -212,6 +212,19 @@ export interface AgentMemoryConfig {
     importSyncBeforeRecall: boolean;
     autoRecall: boolean;
   };
+  retention: {
+    enabled: boolean;
+    history: {
+      maxAgeDays: number;
+    };
+    checkpoints: {
+      maxAgeDays: number;
+      keepRecent: number;
+    };
+    archive: {
+      expireAfterDays: number;
+    };
+  };
 }
 
 export interface AgentMemoryState {
@@ -504,6 +517,13 @@ export interface StatusReport {
     }>;
   checkpoint: CheckpointComparisonSummary | null;
   unrecalledSummary: UnrecalledHistorySummary;
+  retention: {
+    enabled: boolean;
+    pruneCandidateEventCount: number;
+    pruneCandidateCheckpointCount: number;
+    archiveBatchCount: number;
+    oldestArchiveCreatedAt: string | null;
+  };
   suggestedNextAction: string;
 }
 
@@ -539,6 +559,15 @@ export interface AutomationRecallSnapshot {
   noopReason: string | null;
 }
 
+export interface AutomationPruneSnapshot {
+  attempted: boolean;
+  archivedEventCount: number;
+  archivedCheckpointCount: number;
+  expiredArchiveBatchCount: number;
+  archiveBatchPath: string | null;
+  skippedReason: string | null;
+}
+
 export interface AutomationRunResult {
   startedAt: string;
   finishedAt: string;
@@ -546,8 +575,19 @@ export interface AutomationRunResult {
   provider: ProviderPreference;
   importSync: AutomationImportSyncSnapshot;
   recall: AutomationRecallSnapshot;
+  prune: AutomationPruneSnapshot;
   errors: string[];
   warnings: string[];
+}
+
+export interface ArchiveBatchManifest {
+  createdAt: string;
+  archivedEventIds: string[];
+  archivedCheckpointIds: string[];
+  historyMaxAgeDays: number;
+  checkpointMaxAgeDays: number;
+  keepRecent: number;
+  expireAfterDays: number;
 }
 
 export interface IntegrationActionResult {
@@ -613,6 +653,13 @@ export interface MemoryAssessWorkflowDetails {
     warnCount: number;
     topFindings: string[];
   };
+  retention: {
+    enabled: boolean;
+    pruneCandidateEventCount: number;
+    pruneCandidateCheckpointCount: number;
+    archiveBatchCount: number;
+    oldestArchiveCreatedAt: string | null;
+  };
 }
 
 export interface MemoryMaintainWorkflowDetails {
@@ -627,6 +674,7 @@ export interface MemoryMaintainWorkflowDetails {
     recallApplied: boolean;
     groupedItemCount: number;
   };
+  prune: AutomationPruneSnapshot;
   changedFiles: string[];
   latestRunPath: string;
 }
@@ -637,6 +685,7 @@ export interface MemoryCompactHandoffWorkflowDetails {
   topNextSteps: string[];
   unrecalledGroupedCount: number;
   automationSummary: string;
+  retentionSummary: string;
   recommendedResumeActions: string[];
 }
 

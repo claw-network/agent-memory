@@ -14,7 +14,7 @@ import {
 } from "./history-store";
 import { buildImportNormalizationPrompt } from "./prompt-builder";
 import { invokeProvider } from "./provider-adapters";
-import { stableStringify } from "./state-store";
+import { readState, stableStringify } from "./state-store";
 import type {
   HistoryEvent,
   HistorySignalSet,
@@ -504,7 +504,12 @@ export async function syncSources(options: ImportSyncOptions): Promise<ImporterS
   }
 
   const existingEvents = await readHistoryEvents(options.cwd);
-  const allocateEventId = createEventIdAllocator(existingEvents);
+  const state = await readState(options.cwd);
+  const lastRecalledOrdinalMatch = state.maintenance.lastRecalledEventId?.match(/^evt-(\d+)$/);
+  const allocateEventId = createEventIdAllocator(
+    existingEvents,
+    lastRecalledOrdinalMatch ? Number(lastRecalledOrdinalMatch[1]) : 0,
+  );
   const results: ImporterSyncResult[] = [];
 
   for (const source of selectedSources) {

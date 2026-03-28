@@ -162,3 +162,9 @@ Current richer MCP workflow focus inside Phase 4:
 - keep lower-level retrieval and automation tools available for finer control
 
 Future work should continue within Phase 4 on broader importer coverage, report/export surfaces, higher-level policy controls, and richer MCP workflow depth.
+
+Current policy-controls milestone inside Phase 4:
+
+- retention and pruning are now part of the automation path
+- pruning is archive-first under `.agent-memory/archive/`, with later archive expiry
+- active `query`, `recall`, and `status` continue to operate only on the active state/history/checkpoint layers

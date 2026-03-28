@@ -36,6 +36,19 @@ const DEFAULT_CONFIG: AgentMemoryConfig = {
     importSyncBeforeRecall: true,
     autoRecall: true,
   },
+  retention: {
+    enabled: true,
+    history: {
+      maxAgeDays: 90,
+    },
+    checkpoints: {
+      maxAgeDays: 30,
+      keepRecent: 10,
+    },
+    archive: {
+      expireAfterDays: 180,
+    },
+  },
 };
 
 function configPath(rootDir: string): string {
@@ -104,6 +117,22 @@ export async function readConfig(rootDir: string): Promise<AgentMemoryConfig> {
     automation: {
       ...DEFAULT_CONFIG.automation,
       ...(config.automation ?? {}),
+    },
+    retention: {
+      ...DEFAULT_CONFIG.retention,
+      ...(config.retention ?? {}),
+      history: {
+        ...DEFAULT_CONFIG.retention.history,
+        ...(config.retention?.history ?? {}),
+      },
+      checkpoints: {
+        ...DEFAULT_CONFIG.retention.checkpoints,
+        ...(config.retention?.checkpoints ?? {}),
+      },
+      archive: {
+        ...DEFAULT_CONFIG.retention.archive,
+        ...(config.retention?.archive ?? {}),
+      },
     },
   };
 }

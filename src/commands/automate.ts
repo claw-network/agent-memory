@@ -20,6 +20,12 @@ function summarizeLatestRun(latestRun: Awaited<ReturnType<typeof getAutomationSt
     `- recall attempted: ${latestRun.recall.attempted ? "yes" : "no"}`,
     `- recall applied: ${latestRun.recall.applied ? "yes" : "no"}`,
     `- recall grouped items: ${latestRun.recall.groupedItemCount}`,
+    `- prune attempted: ${latestRun.prune.attempted ? "yes" : "no"}`,
+    `- archived events: ${latestRun.prune.archivedEventCount}`,
+    `- archived checkpoints: ${latestRun.prune.archivedCheckpointCount}`,
+    `- expired archive batches: ${latestRun.prune.expiredArchiveBatchCount}`,
+    ...(latestRun.prune.archiveBatchPath ? [`- archive batch path: ${latestRun.prune.archiveBatchPath}`] : []),
+    ...(latestRun.prune.skippedReason ? [`- prune skippedReason: ${latestRun.prune.skippedReason}`] : []),
     ...(latestRun.errors.length > 0 ? [`- last errors: ${latestRun.errors.join(" | ")}`] : []),
     ...(latestRun.warnings.length > 0 ? [`- last warnings: ${latestRun.warnings.join(" | ")}`] : []),
   ];
@@ -68,6 +74,16 @@ export async function runAutomateRunOnce(options: AutomationCommandOptions): Pro
   console.log(`- recall applied: ${result.recall.applied ? "yes" : "no"}`);
   console.log(`- raw events: ${result.recall.rawEventCount}`);
   console.log(`- grouped items: ${result.recall.groupedItemCount}`);
+  console.log(`- prune attempted: ${result.prune.attempted ? "yes" : "no"}`);
+  console.log(`- archived events: ${result.prune.archivedEventCount}`);
+  console.log(`- archived checkpoints: ${result.prune.archivedCheckpointCount}`);
+  console.log(`- expired archive batches: ${result.prune.expiredArchiveBatchCount}`);
+  if (result.prune.archiveBatchPath) {
+    console.log(`- archiveBatchPath: ${result.prune.archiveBatchPath}`);
+  }
+  if (result.prune.skippedReason) {
+    console.log(`- pruneSkippedReason: ${result.prune.skippedReason}`);
+  }
   if (result.recall.noopReason) {
     console.log(`- noopReason: ${result.recall.noopReason}`);
   }

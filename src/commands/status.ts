@@ -64,6 +64,14 @@ export async function runStatus(options: {
   }
 
   console.log("");
+  console.log("Retention:");
+  console.log(`- enabled: ${report.retention.enabled ? "yes" : "no"}`);
+  console.log(`- prune candidate events: ${report.retention.pruneCandidateEventCount}`);
+  console.log(`- prune candidate checkpoints: ${report.retention.pruneCandidateCheckpointCount}`);
+  console.log(`- archive batches: ${report.retention.archiveBatchCount}`);
+  console.log(`- oldest archive createdAt: ${report.retention.oldestArchiveCreatedAt ?? "none"}`);
+
+  console.log("");
   console.log("Suggested Next Action:");
   console.log(report.suggestedNextAction);
   return 0;

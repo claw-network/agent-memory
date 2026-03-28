@@ -213,9 +213,12 @@ First milestone behavior:
 - the daemon is local and built in, not cron-backed
 - each cycle can run `sync --all`
 - each cycle can auto-apply `recall`
+- each cycle also evaluates retention and can archive aged history/checkpoints
 - dirty worktrees do not block the cycle
 - runtime metadata lives in `.agent-memory/automation/`
 - the latest machine-readable run result lives in `.agent-memory/automation/latest-run.json`
+- archive batches live in `.agent-memory/archive/`
+- retention is enabled by default, but archived data no longer participates in active query/recall/status baselines
 
 ## `agent-memory integrate`
 
@@ -319,6 +322,7 @@ It shows:
 - unrecalled backlog counts plus a grouped summary of unrecalled history
 - source sync health
 - checkpoint drift summary
+- retention prune candidates and archive summary
 - the next suggested action
 
 Optional flags:
@@ -347,6 +351,8 @@ It checks:
 - validation baseline freshness
 - recall backlog health
 - recall configuration validity
+- retention configuration validity
+- archive manifest and batch integrity
 
 Important interpretation:
 

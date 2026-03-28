@@ -113,6 +113,21 @@ function parseImportSyncResults(value: unknown, path: string): AutomationRunResu
   });
 }
 
+function parsePruneSnapshot(value: unknown, path: string): AutomationRunResult["prune"] {
+  if (!isRecord(value)) {
+    throw new Error(`${path} must be an object.`);
+  }
+
+  return {
+    attempted: expectBoolean(value.attempted, `${path}.attempted`),
+    archivedEventCount: expectNumber(value.archivedEventCount, `${path}.archivedEventCount`),
+    archivedCheckpointCount: expectNumber(value.archivedCheckpointCount, `${path}.archivedCheckpointCount`),
+    expiredArchiveBatchCount: expectNumber(value.expiredArchiveBatchCount, `${path}.expiredArchiveBatchCount`),
+    archiveBatchPath: value.archiveBatchPath === null ? null : expectString(value.archiveBatchPath, `${path}.archiveBatchPath`),
+    skippedReason: value.skippedReason === null ? null : expectString(value.skippedReason, `${path}.skippedReason`),
+  };
+}
+
 export function validateAutomationDaemonStateShape(value: unknown): AutomationDaemonState {
   if (!isRecord(value)) {
     throw new Error("automation daemon state must be an object.");
@@ -156,6 +171,10 @@ export function validateAutomationRunResultShape(value: unknown): AutomationRunR
     throw new Error("automationRun.recall must be an object.");
   }
 
+  if (!isRecord(value.prune)) {
+    throw new Error("automationRun.prune must be an object.");
+  }
+
   return {
     startedAt: expectString(value.startedAt, "automationRun.startedAt"),
     finishedAt: expectString(value.finishedAt, "automationRun.finishedAt"),
@@ -173,6 +192,7 @@ export function validateAutomationRunResultShape(value: unknown): AutomationRunR
       noopReason:
         value.recall.noopReason === null ? null : expectString(value.recall.noopReason, "automationRun.recall.noopReason"),
     },
+    prune: parsePruneSnapshot(value.prune, "automationRun.prune"),
     errors: expectStringArray(value.errors, "automationRun.errors"),
     warnings: expectStringArray(value.warnings, "automationRun.warnings"),
   };

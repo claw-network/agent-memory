@@ -544,6 +544,54 @@ export function validateConfigShape(value: unknown): string[] {
     }
   }
 
+  if (config.retention !== undefined) {
+    const retention = expectRecord(config.retention, "config.retention", errors);
+    if (retention) {
+      if (retention.enabled !== undefined && typeof retention.enabled !== "boolean") {
+        errors.push("config.retention.enabled must be a boolean.");
+      }
+
+      if (retention.history !== undefined) {
+        const history = expectRecord(retention.history, "config.retention.history", errors);
+        if (history && history.maxAgeDays !== undefined) {
+          const maxAgeDays = expectNumber(history.maxAgeDays, "config.retention.history.maxAgeDays", errors);
+          if (maxAgeDays !== null && maxAgeDays < 0) {
+            errors.push("config.retention.history.maxAgeDays must be >= 0.");
+          }
+        }
+      }
+
+      if (retention.checkpoints !== undefined) {
+        const checkpoints = expectRecord(retention.checkpoints, "config.retention.checkpoints", errors);
+        if (checkpoints) {
+          if (checkpoints.maxAgeDays !== undefined) {
+            const maxAgeDays = expectNumber(checkpoints.maxAgeDays, "config.retention.checkpoints.maxAgeDays", errors);
+            if (maxAgeDays !== null && maxAgeDays < 0) {
+              errors.push("config.retention.checkpoints.maxAgeDays must be >= 0.");
+            }
+          }
+
+          if (checkpoints.keepRecent !== undefined) {
+            const keepRecent = expectNumber(checkpoints.keepRecent, "config.retention.checkpoints.keepRecent", errors);
+            if (keepRecent !== null && keepRecent < 0) {
+              errors.push("config.retention.checkpoints.keepRecent must be >= 0.");
+            }
+          }
+        }
+      }
+
+      if (retention.archive !== undefined) {
+        const archive = expectRecord(retention.archive, "config.retention.archive", errors);
+        if (archive && archive.expireAfterDays !== undefined) {
+          const expireAfterDays = expectNumber(archive.expireAfterDays, "config.retention.archive.expireAfterDays", errors);
+          if (expireAfterDays !== null && expireAfterDays < 0) {
+            errors.push("config.retention.archive.expireAfterDays must be >= 0.");
+          }
+        }
+      }
+    }
+  }
+
   return errors;
 }
 

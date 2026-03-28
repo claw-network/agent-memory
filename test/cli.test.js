@@ -718,8 +718,8 @@ test("query detects changes mode from natural language and prioritizes recent ch
   const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
 
-  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const result = await runCli(projectDir, ["query", "what changed recently?", "--provider=codex", "--scope=all"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
@@ -1149,8 +1149,8 @@ test("query citations use stable section and checkpoint identifiers", async () =
   const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
 
-  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
   const result = await runCli(projectDir, ["query", "current focus", "--provider=codex", "--scope=all"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /bundle\.currentFocus|bundle\.project|checkpoint:chk-/);
@@ -1236,6 +1236,224 @@ test("automate run-once writes an idle latest-run result when no work is pending
   assert.equal(latestRun.status, "idle");
   assert.equal(latestRun.importSync.attempted, false);
   assert.equal(latestRun.recall.attempted, false);
+  assert.equal(latestRun.prune.attempted, true);
+});
+
+test("automate run-once archives recalled old events and older checkpoints", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const config = await readConfig(projectDir);
+  config.retention.history.maxAgeDays = 0;
+  config.retention.checkpoints.maxAgeDays = 0;
+  config.retention.checkpoints.keepRecent = 1;
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  const state = await readState(projectDir);
+  state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.recallCursors.all.lastRecalledEventId = "evt-000002";
+  state.maintenance.recallCursors.local.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.recallCursors.local.lastRecalledEventId = "evt-000002";
+  state.maintenance.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.lastRecalledEventId = "evt-000002";
+  await writeStateFile(projectDir, state);
+
+  const result = await runCli(projectDir, ["automate", "run-once"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /archived events: 2/);
+  assert.match(result.stdout, /archived checkpoints: 1/);
+
+  const latestRun = await readAutomationRun(projectDir);
+  assert.equal(latestRun.prune.archivedEventCount, 2);
+  assert.equal(latestRun.prune.archivedCheckpointCount, 1);
+  assert.ok(latestRun.prune.archiveBatchPath);
+
+  const activeEvents = await readEvents(projectDir);
+  assert.equal(activeEvents.length, 0);
+
+  const checkpoints = await checkpointFiles(projectDir);
+  assert.deepEqual(checkpoints.sort(), ["chk-000002.json"]);
+
+  const manifest = JSON.parse(
+    await fs.readFile(path.join(projectDir, latestRun.prune.archiveBatchPath, "manifest.json"), "utf8"),
+  );
+  assert.deepEqual(manifest.archivedEventIds, ["evt-000001", "evt-000002"]);
+  assert.deepEqual(manifest.archivedCheckpointIds, ["chk-000001"]);
+
+  const validateResult = await runCli(projectDir, ["validate"], providerEnv(providers));
+  assert.equal(validateResult.code, 0, validateResult.stderr);
+});
+
+test("automate run-once never prunes old unrecalled events", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const config = await readConfig(projectDir);
+  config.retention.history.maxAgeDays = 0;
+  config.automation.autoRecall = false;
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  const state = await readState(projectDir);
+  state.maintenance.historyEventCount = 2;
+  state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.recallCursors.all.lastRecalledEventId = "evt-000001";
+  state.maintenance.recallCursors.local.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.recallCursors.local.lastRecalledEventId = "evt-000001";
+  state.maintenance.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.lastRecalledEventId = "evt-000001";
+  await writeStateFile(projectDir, state);
+
+  await fs.appendFile(
+    path.join(projectDir, ".agent-memory", "history", "events.jsonl"),
+    `${JSON.stringify({
+      id: "evt-000002",
+      kind: "tool_run",
+      sourceId: "agent-memory.local",
+      externalItemId: null,
+      createdAt: "2020-01-01T00:00:00.000Z",
+      contentHash: "unrecalled-old-history",
+      summary: "Old unrecalled local event",
+      signals: {
+        decisions: ["Keep unrecalled history"],
+        gotchas: [],
+        nextStepHints: [],
+        keyPaths: [],
+        validationObservations: [],
+      },
+      sourceRef: "agent-memory:update",
+    })}\n`,
+    "utf8",
+  );
+
+  const result = await runCli(projectDir, ["automate", "run-once"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+
+  const latestRun = await readAutomationRun(projectDir);
+  assert.equal(latestRun.prune.archivedEventCount, 1);
+
+  const remainingEvents = await readEvents(projectDir);
+  assert.deepEqual(remainingEvents.map((event) => event.id), ["evt-000002"]);
+});
+
+test("automate run-once skips pruning when retention is disabled", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const config = await readConfig(projectDir);
+  config.retention.enabled = false;
+  config.retention.history.maxAgeDays = 0;
+  config.retention.checkpoints.maxAgeDays = 0;
+  config.retention.checkpoints.keepRecent = 1;
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  const state = await readState(projectDir);
+  state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.recallCursors.all.lastRecalledEventId = "evt-000002";
+  state.maintenance.recallCursors.local.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.recallCursors.local.lastRecalledEventId = "evt-000002";
+  state.maintenance.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.lastRecalledEventId = "evt-000002";
+  await writeStateFile(projectDir, state);
+
+  const result = await runCli(projectDir, ["automate", "run-once"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+
+  const latestRun = await readAutomationRun(projectDir);
+  assert.equal(latestRun.prune.attempted, false);
+  assert.match(latestRun.prune.skippedReason, /disabled/i);
+
+  const activeEvents = await readEvents(projectDir);
+  assert.equal(activeEvents.length, 2);
+  assert.deepEqual((await checkpointFiles(projectDir)).sort(), ["chk-000001.json", "chk-000002.json"]);
+});
+
+test("automate run-once keeps active history and checkpoints unchanged when archive write fails", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const config = await readConfig(projectDir);
+  config.retention.history.maxAgeDays = 0;
+  config.retention.checkpoints.maxAgeDays = 0;
+  config.retention.checkpoints.keepRecent = 1;
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  const state = await readState(projectDir);
+  state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.recallCursors.all.lastRecalledEventId = "evt-000002";
+  state.maintenance.recallCursors.local.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.recallCursors.local.lastRecalledEventId = "evt-000002";
+  state.maintenance.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.lastRecalledEventId = "evt-000002";
+  await writeStateFile(projectDir, state);
+
+  const beforeEventsRaw = await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8");
+  const beforeCheckpointFiles = (await checkpointFiles(projectDir)).sort();
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "archive"), "not-a-directory\n", "utf8");
+
+  const result = await runCli(projectDir, ["automate", "run-once"], providerEnv(providers));
+  assert.equal(result.code, 1);
+
+  const afterEventsRaw = await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8");
+  assert.equal(afterEventsRaw, beforeEventsRaw);
+  assert.deepEqual((await checkpointFiles(projectDir)).sort(), beforeCheckpointFiles);
+});
+
+test("automate run-once expires old archive batches", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["update", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+
+  const config = await readConfig(projectDir);
+  config.retention.history.maxAgeDays = 0;
+  config.retention.checkpoints.maxAgeDays = 0;
+  config.retention.checkpoints.keepRecent = 1;
+  config.retention.archive.expireAfterDays = 180;
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  const state = await readState(projectDir);
+  state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.recallCursors.all.lastRecalledEventId = "evt-000002";
+  state.maintenance.recallCursors.local.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.recallCursors.local.lastRecalledEventId = "evt-000002";
+  state.maintenance.lastRecalledAt = "2026-03-28T00:00:00.000Z";
+  state.maintenance.lastRecalledEventId = "evt-000002";
+  await writeStateFile(projectDir, state);
+
+  assert.equal((await runCli(projectDir, ["automate", "run-once"], providerEnv(providers))).code, 0);
+  const firstRun = await readAutomationRun(projectDir);
+  const manifestPath = path.join(projectDir, firstRun.prune.archiveBatchPath, "manifest.json");
+  const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+  manifest.createdAt = "2020-01-01T00:00:00.000Z";
+  await fs.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+  const configAfter = await readConfig(projectDir);
+  configAfter.retention.archive.expireAfterDays = 0;
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "config.json"), `${JSON.stringify(configAfter, null, 2)}\n`, "utf8");
+
+  const second = await runCli(projectDir, ["automate", "run-once"], providerEnv(providers));
+  assert.equal(second.code, 0, second.stderr);
+
+  const secondRun = await readAutomationRun(projectDir);
+  assert.equal(secondRun.prune.expiredArchiveBatchCount, 1);
+  await assert.rejects(() => fs.access(path.join(projectDir, firstRun.prune.archiveBatchPath)));
 });
 
 test("automate run-once performs sync and aggressive recall even with local file changes", async () => {
@@ -1770,6 +1988,7 @@ test("agent-memory mcp supports initialize, tools/list, and tool calls", async (
     assert.match(assessCall.result.content[0].text, /Status:/);
     assert.ok(["healthy", "attention", "unhealthy"].includes(assessCall.result.structuredContent.details.memoryHealth));
     assert.equal(typeof assessCall.result.structuredContent.details.backlog.unrecalledAll, "number");
+    assert.equal(typeof assessCall.result.structuredContent.details.retention.enabled, "boolean");
 
     const handoffCall = await session.request("tools/call", {
       name: "memory_compact_handoff",
@@ -1778,6 +1997,7 @@ test("agent-memory mcp supports initialize, tools/list, and tool calls", async (
     assert.equal(handoffCall.result.content[0].type, "text");
     assert.match(handoffCall.result.content[0].text, /Suggested Next Action:/);
     assert.ok(Array.isArray(handoffCall.result.structuredContent.details.topGotchas));
+    assert.equal(typeof handoffCall.result.structuredContent.details.retentionSummary, "string");
 
     const maintainCall = await session.request("tools/call", {
       name: "memory_maintain",
@@ -1786,6 +2006,7 @@ test("agent-memory mcp supports initialize, tools/list, and tool calls", async (
     assert.equal(maintainCall.result.content[0].type, "text");
     assert.ok(["ok", "warn", "fail"].includes(maintainCall.result.structuredContent.status));
     assert.equal(typeof maintainCall.result.structuredContent.details.daemon.startedNow, "boolean");
+    assert.equal(typeof maintainCall.result.structuredContent.details.prune.attempted, "boolean");
     assert.match(maintainCall.result.structuredContent.details.latestRunPath, /latest-run\.json$/);
   } finally {
     await runCli(projectDir, ["automate", "stop"], providerEnv(providers)).catch(() => undefined);
@@ -1812,6 +2033,7 @@ test("status reports backlog, source health, checkpoint drift, and suggested nex
   assert.match(result.stdout, /History:/);
   assert.match(result.stdout, /Sources:/);
   assert.match(result.stdout, /Checkpoint Drift:/);
+  assert.match(result.stdout, /Retention:/);
   assert.match(result.stdout, /Suggested Next Action:/);
 });
 
@@ -1925,6 +2147,20 @@ test("validate fails when any older checkpoint becomes unreadable", async () => 
   assert.match(result.stdout, new RegExp(`checkpoints:read:${firstCheckpointId}`));
 });
 
+test("validate warns on damaged archive manifests without failing the canonical system", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
+  await fs.mkdir(path.join(projectDir, ".agent-memory", "archive", "prune-bad"), { recursive: true });
+  await fs.writeFile(path.join(projectDir, ".agent-memory", "archive", "prune-bad", "manifest.json"), "{broken json}\n", "utf8");
+
+  const result = await runCli(projectDir, ["validate"], providerEnv(providers));
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /WARN archive:manifest:prune-bad/);
+});
+
 test("validate warns when recall backlog grows too large", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
@@ -2024,10 +2260,11 @@ test("query docs describe natural-language retrieval, json output, and projectio
 });
 
 test("automation docs describe the local daemon and aggressive recall behavior", async () => {
-  const [readme, commands, roadmap] = await Promise.all([
+  const [readme, commands, roadmap, fileModel] = await Promise.all([
     fs.readFile(path.join(REPO_ROOT, "README.md"), "utf8"),
     fs.readFile(path.join(REPO_ROOT, "docs", "commands.md"), "utf8"),
     fs.readFile(path.join(REPO_ROOT, "docs", "roadmap.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "file-model.md"), "utf8"),
   ]);
 
   assert.match(readme, /automate start/);
@@ -2036,6 +2273,10 @@ test("automation docs describe the local daemon and aggressive recall behavior",
   assert.match(commands, /dirty worktrees do not block the cycle/i);
   assert.match(roadmap, /local built-in automation daemon/i);
   assert.match(roadmap, /aggressive auto-apply recall/i);
+  assert.match(readme, /retention is enabled by default/i);
+  assert.match(commands, /archive batches live in `\.agent-memory\/archive\/`/i);
+  assert.match(fileModel, /archive-first retention layer/i);
+  assert.match(fileModel, /retention\.history\.maxAgeDays/);
 });
 
 test("integration docs describe integrate, mcp, and ensure-running", async () => {
@@ -2071,10 +2312,11 @@ test("integration docs describe integrate, mcp, and ensure-running", async () =>
 });
 
 test("workflow docs describe richer MCP workflow as the current Phase 4 focus", async () => {
-  const [readme, commands, roadmap] = await Promise.all([
+  const [readme, commands, roadmap, fileModel] = await Promise.all([
     fs.readFile(path.join(REPO_ROOT, "README.md"), "utf8"),
     fs.readFile(path.join(REPO_ROOT, "docs", "commands.md"), "utf8"),
     fs.readFile(path.join(REPO_ROOT, "docs", "roadmap.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "file-model.md"), "utf8"),
   ]);
 
   assert.match(readme, /memory_assess/);
@@ -2087,6 +2329,8 @@ test("workflow docs describe richer MCP workflow as the current Phase 4 focus", 
   assert.match(roadmap, /memory_assess/);
   assert.match(roadmap, /memory_compact_handoff/);
   assert.match(roadmap, /memory_maintain/);
+  assert.match(roadmap, /policy-controls milestone/i);
+  assert.match(fileModel, /archived data/i);
 });
 
 test("docs describe add and sync as the official external session commands", async () => {

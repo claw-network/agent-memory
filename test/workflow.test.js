@@ -158,6 +158,7 @@ test("buildMemoryAssessWorkflow returns the stable assess shape", async () => {
   assert.equal(typeof result.details.backlog.unrecalledAll, "number");
   assert.equal(typeof result.details.automation.running, "boolean");
   assert.ok(Array.isArray(result.details.validate.topFindings));
+  assert.equal(typeof result.details.retention.enabled, "boolean");
 });
 
 test("runMemoryMaintainWorkflow returns the stable maintain shape", async () => {
@@ -176,6 +177,7 @@ test("runMemoryMaintainWorkflow returns the stable maintain shape", async () => 
     assert.ok(["ok", "warn", "fail"].includes(result.status));
     assert.equal(typeof result.details.daemon.wasRunning, "boolean");
     assert.equal(typeof result.details.daemon.startedNow, "boolean");
+    assert.equal(typeof result.details.prune.attempted, "boolean");
     assert.ok(Array.isArray(result.details.changedFiles));
     assert.match(result.details.latestRunPath, /latest-run\.json$/);
   } finally {
@@ -197,5 +199,6 @@ test("buildMemoryCompactHandoffWorkflow returns the stable handoff shape", async
   assert.ok(Array.isArray(result.details.topGotchas));
   assert.ok(Array.isArray(result.details.topNextSteps));
   assert.equal(typeof result.details.unrecalledGroupedCount, "number");
+  assert.equal(typeof result.details.retentionSummary, "string");
   assert.ok(Array.isArray(result.details.recommendedResumeActions));
 });

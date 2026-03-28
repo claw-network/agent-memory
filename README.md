@@ -160,6 +160,7 @@ Shows:
 - unrecalled backlog counts plus a grouped summary of unrecalled history
 - source sync health
 - checkpoint drift summary
+- retention and archive summary
 - the next suggested action
 
 ### Local automation daemon
@@ -177,8 +178,17 @@ The first Phase 4 milestone is a local built-in automation daemon.
 - it can run `sync --all` and `recall --yes` on a schedule
 - it writes runtime state under `.agent-memory/automation/`
 - it records the latest machine-readable run result in `.agent-memory/automation/latest-run.json`
+- it applies retention pruning by default and archives aged history/checkpoints under `.agent-memory/archive/`
 - it uses aggressive auto-apply recall by default
 - dirty worktrees do not block automation cycles in this first version
+
+Retention behavior in this first policy-controls milestone:
+
+- retention is enabled by default
+- pruning only happens inside automation cycles
+- pruning is archive-first, not direct hard delete
+- archived batches later expire automatically from `.agent-memory/archive/`
+- archived data does not participate in active `query`, `recall`, or `status` baselines
 
 ### Integrate Claude Code + Codex
 
@@ -252,6 +262,7 @@ npx agent-memory validate
 ```
 
 Audits state integrity, history continuity, checkpoint presence, projection alignment, entry wiring, and recall backlog health.
+It also inspects retention config plus archive batch health under `.agent-memory/archive/`.
 
 ## Troubleshooting
 

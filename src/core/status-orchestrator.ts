@@ -2,6 +2,7 @@ import { compareStateWithCheckpoint } from "./checkpoint-comparison";
 import { readConfig } from "./config-store";
 import { eventsAfterCursor, readHistoryEvents, readSources } from "./history-store";
 import { summarizeUnrecalledHistory } from "./recall-evidence";
+import { readRetentionSummary } from "./retention-orchestrator";
 import { readState } from "./state-store";
 import type { CheckpointState, StatusReport } from "../types";
 
@@ -9,12 +10,16 @@ function suggestedNextAction(input: {
   unrecalledAll: number;
   hasFailedSource: boolean;
   changedSections: string[];
+  retentionCandidates: number;
 }): string {
   if (input.hasFailedSource) {
     return "Run `agent-memory sync --all` to retry failed sources.";
   }
   if (input.unrecalledAll > 0) {
     return "Run `agent-memory recall` to consolidate unrecalled history.";
+  }
+  if (input.retentionCandidates > 0) {
+    return "Run `agent-memory automate run-once` to archive aged history and checkpoints.";
   }
   if (input.changedSections.length > 0) {
     return "Run `agent-memory update` if the active bundle no longer reflects repository reality.";
@@ -39,6 +44,7 @@ export async function buildStatusReport(
   const unrecalledImports = eventsAfterCursor(events.filter((event) => event.kind === "imported_session"), state.maintenance.recallCursors.imports.lastRecalledEventId).length;
   const hasFailedSource = sources.some((source) => source.lastSyncStatus === "failed");
   const unrecalledSummary = summarizeUnrecalledHistory(unrecalledAllEvents);
+  const retention = await readRetentionSummary(rootDir, { state, config, events });
 
   return {
     state: {
@@ -61,6 +67,7 @@ export async function buildStatusReport(
     })),
     checkpoint: comparison,
     unrecalledSummary,
+    retention,
     suggestedNextAction:
       unrecalledAll > config.recall.backlogWarnThreshold
         ? "Run `agent-memory recall` because the backlog is above the configured threshold."
@@ -68,6 +75,7 @@ export async function buildStatusReport(
             unrecalledAll,
             hasFailedSource,
             changedSections: comparison?.changedSections ?? [],
+            retentionCandidates: retention.pruneCandidateEventCount + retention.pruneCandidateCheckpointCount,
           }),
   };
 }
