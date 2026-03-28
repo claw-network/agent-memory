@@ -55,6 +55,12 @@ That is the purpose of the current architecture.
   Register an external session source
 - `sync`
   Bring external sessions into the history layer
+- `automate`
+  Run local automation for import-sync and recall maintenance
+- `integrate`
+  Connect Claude Code and Codex to `agent-memory`
+- `mcp`
+  Expose `agent-memory` as a local stdio MCP server
 - `validate`
   Audit the whole system, not just the current bundle
 

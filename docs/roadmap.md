@@ -132,3 +132,27 @@ Phase 2 is complete:
 - `config.json` provides project-level recall defaults and policy controls
 
 Future work should now treat Phase 2 as complete and move into Phase 3.
+
+## Phase 3 Status
+
+Phase 3 is complete:
+
+- `query` uses richer shortlist ranking across bundle, events, and checkpoints
+- natural-language structured questions are routed into changes, next, traps, and general answer modes
+- project-specific retrieval templates are available under `.agent-memory/config.json`
+- bundle citations are cross-linked to generated projection files when applicable
+- `query` supports agent-facing JSON output via `--output=json`
+
+Future work should now treat Phase 3 as complete and move into Phase 4.
+
+## Phase 4 Status
+
+Phase 4 has started and its first milestone is complete:
+
+- local automation daemon commands are available through `automate start|stop|status|run-once|ensure-running`
+- automation runtime state and latest-run reports are written under `.agent-memory/automation/`
+- aggressive auto-apply recall is supported for structurally healthy repositories
+- Claude Code and Codex integration is available through `integrate`, with project-level Claude assets and safe global Codex MCP registration
+- `agent-memory mcp` exposes retrieval, health, and automation control tools for chat-client integrations
+
+Future work should continue within Phase 4 on broader importer coverage, report/export surfaces, and higher-level policy controls.

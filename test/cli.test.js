@@ -2053,3 +2053,20 @@ test("docs describe add and sync as the official external session commands", asy
   assert.match(roadmap, /external session ingestion through `add` and `sync`/);
   assert.match(adoption, /Use `add` and `sync` to ingest external sessions/);
 });
+
+test("roadmap documents Phase 3 completion and Phase 4 first-milestone completion", async () => {
+  const [roadmap, overview] = await Promise.all([
+    fs.readFile(path.join(REPO_ROOT, "docs", "roadmap.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "overview.md"), "utf8"),
+  ]);
+
+  assert.match(roadmap, /## Phase 3 Status/);
+  assert.match(roadmap, /Phase 3 is complete:/);
+  assert.match(roadmap, /## Phase 4 Status/);
+  assert.match(roadmap, /Phase 4 has started and its first milestone is complete:/);
+  assert.match(roadmap, /`query` supports agent-facing JSON output via `--output=json`/);
+  assert.match(roadmap, /`agent-memory mcp` exposes retrieval, health, and automation control tools/);
+  assert.match(overview, /- `automate`/);
+  assert.match(overview, /- `integrate`/);
+  assert.match(overview, /- `mcp`/);
+});
