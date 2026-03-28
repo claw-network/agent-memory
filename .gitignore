@@ -1,5 +1,7 @@
 dist
 temp
+.agent-memory/automation/
+.agent-memory/archive/
 node_modules
 package-lock.json
 .DS_Store

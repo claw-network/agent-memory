@@ -17,6 +17,10 @@
   "scripts": {
     "build": "npm run clean && tsc -p tsconfig.json && chmod +x dist/cli.js",
     "clean": "rm -rf dist",
+    "dogfood:init": "node scripts/dogfood/init.mjs",
+    "dogfood:exercise": "node scripts/dogfood/exercise.mjs",
+    "dogfood:repair": "node scripts/dogfood/repair.mjs",
+    "dogfood:status": "node scripts/dogfood/status.mjs",
     "prepack": "npm run build",
     "test": "npm run build && node --test test/*.test.js"
   },

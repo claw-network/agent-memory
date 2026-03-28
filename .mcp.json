@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agent-memory": {
+      "args": [
+        "--no-install",
+        "agent-memory",
+        "mcp"
+      ],
+      "command": "npx"
+    }
+  }
+}

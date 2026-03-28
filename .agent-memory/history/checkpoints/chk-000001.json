@@ -1,0 +1,167 @@
+{
+  "bundle": {
+    "currentFocus": {
+      "currentState": [
+        "Dogfood scripts exist under scripts/dogfood.",
+        "CLI, integration, automation, retention, MCP, and workflow features are covered by tests.",
+        "Stable self-host assets should live in repo root and stay reviewable in git."
+      ],
+      "knownRisks": [
+        "Real provider authentication may differ across local environments.",
+        "Dogfood repair uses provider-driven editing and should stay isolated in a temporary worktree.",
+        "Automation runtime and archive outputs must stay ignored while stable memory assets remain tracked."
+      ],
+      "summary": "The repository is configured to self-host and exercise its own memory system.",
+      "validationSnapshot": {
+        "results": [
+          {
+            "command": "npm run build",
+            "label": "build",
+            "status": "passed",
+            "summary": "Build command is available."
+          },
+          {
+            "command": "npm test",
+            "label": "test",
+            "status": "passed",
+            "summary": "Test suite command is available."
+          }
+        ],
+        "status": "passed",
+        "suggestedNextActions": [
+          "Run npm run dogfood:exercise after code changes.",
+          "Run npm run dogfood:repair when self-host drift or breakage is detected."
+        ],
+        "summary": "Baseline validation was synthesized for self-host initialization.",
+        "validatedAt": "2026-03-28T00:00:00.000Z"
+      }
+    },
+    "gotchas": [
+      {
+        "cause": "Dogfood scripts rely on Codex or Claude availability unless overridden.",
+        "correctPath": "Set AGENT_MEMORY_DOGFOOD_PROVIDER or explicit AGENT_MEMORY_*_BIN values when exercising the repo.",
+        "symptom": "Self-host init or repair can hang or fail when local agent auth is missing.",
+        "title": "Dogfood provider auth is environment-dependent"
+      }
+    ],
+    "nextSteps": [
+      {
+        "done": "The stable root assets reflect the current repository behavior.",
+        "start": "Run npm run dogfood:init after major dogfood flow changes.",
+        "title": "Keep the self-host baseline fresh",
+        "why": "Repo-root memory and integration assets are now part of the product surface."
+      },
+      {
+        "done": "The latest dogfood report is green.",
+        "start": "Run npm run dogfood:exercise.",
+        "title": "Use dogfood exercise before shipping big changes",
+        "why": "The worktree canary catches drift, integration breakage, and repair regressions."
+      }
+    ],
+    "project": {
+      "keyPaths": [
+        "package.json",
+        "README.md",
+        "src/cli.ts",
+        "scripts/dogfood/lib.mjs"
+      ],
+      "name": "@agent-connect/memory",
+      "packageManager": "npm",
+      "primaryEcosystem": "node",
+      "recommendedEntryFile": "README.md",
+      "summary": "Self-host dogfood baseline for the agent-memory repository.",
+      "workspaceManager": "none"
+    },
+    "projectMap": {
+      "architectureNotes": [
+        "Canonical state lives under .agent-memory and projects into docs/agent-memory.",
+        "Automation, integration, MCP workflow, retention, and dogfood are all first-class product surfaces.",
+        "The repository now self-hosts its own memory and integration baseline."
+      ],
+      "denseSourceAreas": [
+        {
+          "note": "Core product logic lives here.",
+          "path": "src/core"
+        },
+        {
+          "note": "Self-host automation and repair orchestration.",
+          "path": "scripts/dogfood"
+        },
+        {
+          "note": "Coverage is broad and doubles as executable product spec.",
+          "path": "test"
+        }
+      ],
+      "entrypoints": [
+        {
+          "path": "src/cli.ts",
+          "role": "Primary CLI entrypoint."
+        },
+        {
+          "path": "scripts/dogfood/init.mjs",
+          "role": "Self-host baseline bootstrap."
+        },
+        {
+          "path": "scripts/dogfood/exercise.mjs",
+          "role": "Isolated worktree dogfood exercise runner."
+        },
+        {
+          "path": "scripts/dogfood/repair.mjs",
+          "role": "Deterministic plus provider-driven self-heal runner."
+        }
+      ],
+      "firstFilesToRead": [
+        "README.md",
+        "src/cli.ts",
+        "src/core/workflow-orchestrator.ts",
+        "scripts/dogfood/lib.mjs"
+      ],
+      "modules": [
+        {
+          "name": "commands",
+          "path": "src/commands",
+          "responsibility": "CLI entrypoints for operator-facing actions."
+        },
+        {
+          "name": "core",
+          "path": "src/core",
+          "responsibility": "Canonical memory, automation, integration, query, and workflow orchestration."
+        },
+        {
+          "name": "dogfood",
+          "path": "scripts/dogfood",
+          "responsibility": "Repo self-host exercise and repair flows."
+        },
+        {
+          "name": "tests",
+          "path": "test",
+          "responsibility": "Unit, CLI integration, retention, workflow, and dogfood coverage."
+        }
+      ]
+    },
+    "validationCommands": [
+      {
+        "command": [
+          "npm",
+          "run",
+          "build"
+        ],
+        "label": "build",
+        "purpose": "Confirm the package still compiles."
+      },
+      {
+        "command": [
+          "npm",
+          "test"
+        ],
+        "label": "test",
+        "purpose": "Run the full CLI, workflow, retention, and dogfood suite."
+      }
+    ]
+  },
+  "bundleHash": "064a82ecbc8b63ca97d01824fdb45f860aa0481cd2ebf8e1bdd8e392cd4c29d8",
+  "createdAt": "2026-03-28T15:12:27.127Z",
+  "eventId": "evt-000001",
+  "id": "chk-000001",
+  "summary": "The repository is configured to self-host and exercise its own memory system."
+}

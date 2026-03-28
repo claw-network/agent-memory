@@ -1,5 +1,24 @@
 # agent-memory
 
+<!-- agent-memory:entry version=3 bundleHash=064a82ecbc8b63ca97d01824fdb45f860aa0481cd2ebf8e1bdd8e392cd4c29d8 start -->
+## Project Memory
+
+This repository keeps canonical project memory in `.agent-memory/state.json`.
+
+History and checkpoints live in `.agent-memory/history/`.
+
+Readable projections live in `docs/agent-memory/`.
+
+Recommended reading order:
+1. `docs/agent-memory/README.md`
+2. `docs/agent-memory/project-map.md`
+3. `docs/agent-memory/current-focus.md`
+4. `docs/agent-memory/gotchas.md` when debugging gets noisy or surprising
+5. `docs/agent-memory/next-steps.md` when you need a clean starting point
+
+Use `npx agent-memory sync`, `npx agent-memory recall`, and `npx agent-memory query` to maintain and retrieve project memory.
+<!-- agent-memory:entry end -->
+
 [![npm version](https://img.shields.io/npm/v/%40agent-connect%2Fmemory)](https://www.npmjs.com/package/@agent-connect/memory)
 [![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![node >=18](https://img.shields.io/badge/node-%3E%3D18-417e38)](./package.json)
@@ -254,6 +273,26 @@ npx agent-memory automate ensure-running
 ```
 
 This is the lightweight startup command used by Claude Code `SessionStart` hooks and can also be called directly.
+
+### Self-host dogfood
+
+This repository can also exercise itself as a long-lived dogfood arena.
+
+```bash
+npm run dogfood:init
+npm run dogfood:exercise
+npm run dogfood:repair
+npm run dogfood:status
+```
+
+Current dogfood behavior:
+
+- repo-root `.agent-memory/`, `docs/agent-memory/`, `.mcp.json`, `.claude/`, and `AGENTS.md` form the stable self-host baseline
+- `exercise` runs in an isolated git worktree under `temp/dogfood/worktree`
+- sandboxed `HOME=temp/dogfood/home` keeps Codex integration rehearsal away from your real user config
+- reports are written under `temp/dogfood/reports/`
+- `repair` first does deterministic maintenance/integration repair, then can escalate to whole-repo provider-driven repair if source-level breakage remains
+- successful repair only applies a patch back to the root worktree; it does not auto-commit or auto-push
 
 ### Audit health
 

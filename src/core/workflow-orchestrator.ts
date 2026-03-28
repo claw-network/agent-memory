@@ -3,6 +3,7 @@ import {
   getAutomationStatus,
   runAutomationCycle,
 } from "./automation-orchestrator";
+import { setTimeout as sleep } from "node:timers/promises";
 import { buildIntegrationStatusReport } from "./integration";
 import { buildStatusReport } from "./status-orchestrator";
 import { readState } from "./state-store";
@@ -198,6 +199,19 @@ function topNextSteps(bundleNextSteps: Awaited<ReturnType<typeof readState>>["bu
   return bundleNextSteps.slice(0, 3).map((step) => `${step.title}: ${step.start}`);
 }
 
+async function waitForDaemonMaintenanceRun(rootDir: string, previousFinishedAt: string | null): Promise<Awaited<ReturnType<typeof runAutomationCycle>> | null> {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const status = await getAutomationStatus(rootDir);
+    if (status.latestRun && status.latestRun.finishedAt !== previousFinishedAt) {
+      return status.latestRun;
+    }
+    await sleep(100);
+  }
+
+  return null;
+}
+
 export async function buildMemoryAssessWorkflow(rootDir: string): Promise<MemoryAssessWorkflowResult> {
   const [statusReport, findings, automation, integration] = await Promise.all([
     buildStatusReport(rootDir, null, false),
@@ -293,7 +307,9 @@ export async function buildMemoryAssessWorkflow(rootDir: string): Promise<Memory
 export async function runMemoryMaintainWorkflow(rootDir: string): Promise<MemoryMaintainWorkflowResult> {
   const before = await getAutomationStatus(rootDir);
   const ensured = await ensureAutomationDaemonRunning(rootDir);
-  const result = await runAutomationCycle(rootDir);
+  const result = ensured.started
+    ? (await waitForDaemonMaintenanceRun(rootDir, before.latestRun?.finishedAt ?? null)) ?? await runAutomationCycle(rootDir)
+    : await runAutomationCycle(rootDir);
   const status: WorkflowStatus = result.status === "failed"
     ? "fail"
     : (result.warnings.length > 0 ? "warn" : "ok");

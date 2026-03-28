@@ -1116,7 +1116,7 @@ test("validate fails on damaged history and source registry", async () => {
   assert.match(result.stdout, /sources:read/);
 });
 
-test("validate warns when the last sync failed but state is still usable", async () => {
+test("validate warns when the last sync failed but state is still usable", { concurrency: false }, async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
@@ -2331,6 +2331,21 @@ test("workflow docs describe richer MCP workflow as the current Phase 4 focus", 
   assert.match(roadmap, /memory_maintain/);
   assert.match(roadmap, /policy-controls milestone/i);
   assert.match(fileModel, /archived data/i);
+});
+
+test("README and roadmap describe the self-host dogfood workflow", async () => {
+  const [readme, roadmap] = await Promise.all([
+    fs.readFile(path.join(REPO_ROOT, "README.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "roadmap.md"), "utf8"),
+  ]);
+
+  assert.match(readme, /npm run dogfood:init/);
+  assert.match(readme, /npm run dogfood:exercise/);
+  assert.match(readme, /npm run dogfood:repair/);
+  assert.match(readme, /isolated git worktree/i);
+  assert.match(readme, /sandboxed `HOME=temp\/dogfood\/home`/i);
+  assert.match(roadmap, /self-host dogfood milestone/i);
+  assert.match(roadmap, /dogfood:init\|exercise\|repair\|status/);
 });
 
 test("docs describe add and sync as the official external session commands", async () => {

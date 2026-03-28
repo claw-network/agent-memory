@@ -168,3 +168,10 @@ Current policy-controls milestone inside Phase 4:
 - retention and pruning are now part of the automation path
 - pruning is archive-first under `.agent-memory/archive/`, with later archive expiry
 - active `query`, `recall`, and `status` continue to operate only on the active state/history/checkpoint layers
+
+Current self-host dogfood milestone inside Phase 4:
+
+- the repository can now use itself as a dogfood arena through `npm run dogfood:init|exercise|repair|status`
+- stable repo-root memory and integration assets can be maintained as the committed dogfood baseline
+- exercise runs in an isolated git worktree with sandboxed HOME for safe Codex integration rehearsal
+- repair can first perform deterministic maintenance fixes, then escalate to whole-repo provider-driven repair before applying a patch back to the root worktree

@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "agent-memory automate ensure-running",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "agent-memory automate run-once",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

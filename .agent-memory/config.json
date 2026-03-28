@@ -1,0 +1,47 @@
+{
+  "recall": {
+    "defaultSection": "all",
+    "defaultSource": "all",
+    "policy": "balanced",
+    "backlogWarnThreshold": 10,
+    "preview": {
+      "showDiffByDefault": false
+    }
+  },
+  "query": {
+    "defaultOutput": "text",
+    "templates": {
+      "answer": {
+        "instructions": "Answer the question directly using the strongest available evidence. Prefer clarity over exhaustiveness."
+      },
+      "changes": {
+        "instructions": "Summarize the most relevant recent changes first. Prefer recent checkpoints and history events over static project structure."
+      },
+      "next": {
+        "instructions": "Recommend the most relevant next actions first. Prefer concrete follow-ups and suggested actions over general descriptions."
+      },
+      "traps": {
+        "instructions": "Highlight the most relevant gotchas, pitfalls, and risky areas first. Prefer durable warnings over generic cautionary advice."
+      }
+    }
+  },
+  "automation": {
+    "intervalMinutes": 15,
+    "provider": "auto",
+    "importSyncBeforeRecall": true,
+    "autoRecall": true
+  },
+  "retention": {
+    "enabled": true,
+    "history": {
+      "maxAgeDays": 90
+    },
+    "checkpoints": {
+      "maxAgeDays": 30,
+      "keepRecent": 10
+    },
+    "archive": {
+      "expireAfterDays": 180
+    }
+  }
+}
