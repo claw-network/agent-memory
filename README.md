@@ -216,6 +216,13 @@ Generated/updated files include:
 Claude Code integration uses project MCP + project skills + SessionStart and Stop hooks.
 Codex integration uses MCP + `AGENTS.md` + the local daemon.
 
+The generated Claude skill and Codex guidance now prefer the higher-level MCP workflow tools:
+
+- `memory_assess` for a quick health and readiness check
+- `memory_compact_handoff` before compact or session handoff
+- `memory_maintain` for a one-shot maintenance pass
+- lower-level tools such as `memory_query`, `memory_status`, `memory_validate`, and `automation_*` only when finer control is needed
+
 ### MCP server
 
 ```bash
@@ -223,6 +230,12 @@ npx agent-memory mcp
 ```
 
 This starts the local stdio MCP server used by Claude Code and Codex integrations.
+
+The MCP server exposes:
+
+- high-level workflow tools: `memory_assess`, `memory_compact_handoff`, `memory_maintain`
+- lower-level retrieval and health tools: `memory_query`, `memory_status`, `memory_validate`
+- automation controls: `automation_status`, `automation_ensure_running`, `automation_run_once`
 
 ### Ensure automation is running
 

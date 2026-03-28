@@ -4,12 +4,64 @@ import { buildStatusReport } from "./status-orchestrator";
 import { runQuery as runQueryOrchestrator } from "./query-orchestrator";
 import { validateMemory } from "./validate-memory";
 import { readLatestCheckpoint } from "./history-store";
+import {
+  buildMemoryAssessWorkflow,
+  buildMemoryCompactHandoffWorkflow,
+  runMemoryMaintainWorkflow,
+} from "./workflow-orchestrator";
 
 interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
   invoke: (rootDir: string, argumentsValue: Record<string, unknown>) => Promise<unknown>;
+}
+
+function isWorkflowResult(value: unknown): value is {
+  status: string;
+  summary: string;
+  suggestedNextAction: string;
+  warnings: string[];
+  errors: string[];
+  details: unknown;
+} {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.status === "string" &&
+    typeof record.summary === "string" &&
+    typeof record.suggestedNextAction === "string" &&
+    Array.isArray(record.warnings) &&
+    Array.isArray(record.errors) &&
+    Object.prototype.hasOwnProperty.call(record, "details")
+  );
+}
+
+function formatWorkflowResult(value: {
+  status: string;
+  summary: string;
+  suggestedNextAction: string;
+  warnings: string[];
+  errors: string[];
+}): string {
+  const lines = [
+    `Status: ${value.status}`,
+    `Summary: ${value.summary}`,
+    `Suggested Next Action: ${value.suggestedNextAction}`,
+  ];
+
+  if (value.warnings.length > 0) {
+    lines.push(`Warnings: ${value.warnings.join(" | ")}`);
+  }
+
+  if (value.errors.length > 0) {
+    lines.push(`Errors: ${value.errors.join(" | ")}`);
+  }
+
+  return lines.join("\n");
 }
 
 function writeMessage(message: Record<string, unknown>): void {
@@ -20,6 +72,36 @@ function writeMessage(message: Record<string, unknown>): void {
 
 function toolDefinitions(): ToolDefinition[] {
   return [
+    {
+      name: "memory_assess",
+      description: "Assess memory, validation, automation, and integration health in one workflow result.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      invoke: async (rootDir) => await buildMemoryAssessWorkflow(rootDir),
+    },
+    {
+      name: "memory_maintain",
+      description: "Run one high-level maintenance workflow and report whether sync/recall changed anything.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      invoke: async (rootDir) => await runMemoryMaintainWorkflow(rootDir),
+    },
+    {
+      name: "memory_compact_handoff",
+      description: "Build a compact-ready handoff summary from current focus, backlog, automation, and validation state.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      invoke: async (rootDir) => await buildMemoryCompactHandoffWorkflow(rootDir),
+    },
     {
       name: "memory_query",
       description: "Query repository memory with natural-language retrieval modes.",
@@ -180,9 +262,10 @@ async function handleRequest(rootDir: string, request: Record<string, unknown>):
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2),
+            text: isWorkflowResult(result) ? formatWorkflowResult(result) : JSON.stringify(result, null, 2),
           },
         ],
+        ...(result && typeof result === "object" && !Array.isArray(result) ? { structuredContent: result } : {}),
       });
     } catch (error) {
       return response(id, {

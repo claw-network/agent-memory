@@ -55,8 +55,18 @@ test("mergeClaudeSettings inserts hooks idempotently without removing unrelated 
 test("mergeAgentsMd inserts or updates only the managed agent-memory block", () => {
   const once = mergeAgentsMd("# Existing\n");
   assert.match(once, /agent-memory:codex-integration start/);
+  assert.match(once, /memory_assess/);
+  assert.match(once, /memory_compact_handoff/);
   const twice = mergeAgentsMd(once);
   assert.equal(twice, once);
+});
+
+test("buildClaudeSkillContent prefers the higher-level workflow tools", () => {
+  const skill = buildClaudeSkillContent();
+  assert.match(skill, /memory_assess/);
+  assert.match(skill, /memory_compact_handoff/);
+  assert.match(skill, /memory_maintain/);
+  assert.match(skill, /memory_query/);
 });
 
 test("mergeCodexConfigToml updates only the agent-memory MCP block", () => {

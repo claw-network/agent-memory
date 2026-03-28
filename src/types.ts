@@ -14,6 +14,9 @@ export type QueryOutputFormat = "text" | "json";
 export type CitationSourceType = "bundle" | "event" | "checkpoint";
 export type SourceSyncStatus = "never" | "passed" | "failed";
 export type AutomationRunStatus = "idle" | "imported" | "recalled" | "recalled_noop" | "failed";
+export type WorkflowStatus = "ok" | "warn" | "fail";
+export type MemoryHealthStatus = "healthy" | "attention" | "unhealthy";
+export type IntegrationHealthStatus = "healthy" | "attention";
 export type IntegrationTarget = "all" | "claude" | "codex";
 export type IntegrationActionType = "create" | "update" | "unchanged";
 export type IntegrationScope = "project" | "user";
@@ -578,3 +581,65 @@ export interface IntegrationStatusReport {
   missingItems: string[];
   suggestedNextAction: string;
 }
+
+export interface WorkflowResult<TDetails> {
+  status: WorkflowStatus;
+  summary: string;
+  suggestedNextAction: string;
+  details: TDetails;
+  warnings: string[];
+  errors: string[];
+}
+
+export interface MemoryAssessWorkflowDetails {
+  memoryHealth: MemoryHealthStatus;
+  backlog: {
+    unrecalledAll: number;
+    unrecalledLocal: number;
+    unrecalledImports: number;
+  };
+  automation: {
+    running: boolean;
+    lastRunStatus: AutomationRunStatus | null;
+    lastRunFinishedAt: string | null;
+  };
+  integration: {
+    claude: IntegrationHealthStatus;
+    codex: IntegrationHealthStatus;
+    healthy: boolean;
+  };
+  validate: {
+    failCount: number;
+    warnCount: number;
+    topFindings: string[];
+  };
+}
+
+export interface MemoryMaintainWorkflowDetails {
+  daemon: {
+    wasRunning: boolean;
+    startedNow: boolean;
+  };
+  run: {
+    status: AutomationRunStatus;
+    importAttempted: boolean;
+    recallAttempted: boolean;
+    recallApplied: boolean;
+    groupedItemCount: number;
+  };
+  changedFiles: string[];
+  latestRunPath: string;
+}
+
+export interface MemoryCompactHandoffWorkflowDetails {
+  currentFocusSummary: string;
+  topGotchas: string[];
+  topNextSteps: string[];
+  unrecalledGroupedCount: number;
+  automationSummary: string;
+  recommendedResumeActions: string[];
+}
+
+export type MemoryAssessWorkflowResult = WorkflowResult<MemoryAssessWorkflowDetails>;
+export type MemoryMaintainWorkflowResult = WorkflowResult<MemoryMaintainWorkflowDetails>;
+export type MemoryCompactHandoffWorkflowResult = WorkflowResult<MemoryCompactHandoffWorkflowDetails>;

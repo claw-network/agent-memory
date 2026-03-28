@@ -1413,6 +1413,9 @@ test("integrate claude writes project MCP, hooks, and skill files idempotently",
   assert.ok(settings.hooks.Stop);
 
   const skill = await fs.readFile(path.join(projectDir, ".claude", "skills", "agent-memory", "SKILL.md"), "utf8");
+  assert.match(skill, /memory_assess/);
+  assert.match(skill, /memory_compact_handoff/);
+  assert.match(skill, /memory_maintain/);
   assert.match(skill, /memory_query/);
 
   const before = await fs.readFile(path.join(projectDir, ".claude", "settings.json"), "utf8");
@@ -1438,8 +1441,10 @@ test("integrate codex uses CLI registration when available and preserves AGENTS 
   assert.equal(result.code, 0, result.stderr);
 
   const agents = await fs.readFile(path.join(projectDir, "AGENTS.md"), "utf8");
-  assert.match(agents, /automation_ensure_running/);
+  assert.match(agents, /memory_assess/);
   assert.match(agents, /memory_query/);
+  assert.match(agents, /memory_compact_handoff/);
+  assert.match(agents, /memory_maintain/);
 
   const codexConfig = await fs.readFile(path.join(fakeHome, ".codex", "config.toml"), "utf8");
   assert.match(codexConfig, /\[mcp_servers\.agent-memory\]/);
@@ -1751,16 +1756,39 @@ test("agent-memory mcp supports initialize, tools/list, and tool calls", async (
 
     const toolsResult = await session.request("tools/list", {});
     assert.ok(Array.isArray(toolsResult.result.tools));
+    assert.ok(toolsResult.result.tools.some((tool) => tool.name === "memory_assess"));
+    assert.ok(toolsResult.result.tools.some((tool) => tool.name === "memory_maintain"));
+    assert.ok(toolsResult.result.tools.some((tool) => tool.name === "memory_compact_handoff"));
     assert.ok(toolsResult.result.tools.some((tool) => tool.name === "memory_query"));
     assert.ok(toolsResult.result.tools.some((tool) => tool.name === "automation_ensure_running"));
 
-    const toolCall = await session.request("tools/call", {
-      name: "memory_validate",
+    const assessCall = await session.request("tools/call", {
+      name: "memory_assess",
       arguments: {},
     });
-    assert.equal(toolCall.result.content[0].type, "text");
-    assert.match(toolCall.result.content[0].text, /state:schema|Summary:/);
+    assert.equal(assessCall.result.content[0].type, "text");
+    assert.match(assessCall.result.content[0].text, /Status:/);
+    assert.ok(["healthy", "attention", "unhealthy"].includes(assessCall.result.structuredContent.details.memoryHealth));
+    assert.equal(typeof assessCall.result.structuredContent.details.backlog.unrecalledAll, "number");
+
+    const handoffCall = await session.request("tools/call", {
+      name: "memory_compact_handoff",
+      arguments: {},
+    });
+    assert.equal(handoffCall.result.content[0].type, "text");
+    assert.match(handoffCall.result.content[0].text, /Suggested Next Action:/);
+    assert.ok(Array.isArray(handoffCall.result.structuredContent.details.topGotchas));
+
+    const maintainCall = await session.request("tools/call", {
+      name: "memory_maintain",
+      arguments: {},
+    });
+    assert.equal(maintainCall.result.content[0].type, "text");
+    assert.ok(["ok", "warn", "fail"].includes(maintainCall.result.structuredContent.status));
+    assert.equal(typeof maintainCall.result.structuredContent.details.daemon.startedNow, "boolean");
+    assert.match(maintainCall.result.structuredContent.details.latestRunPath, /latest-run\.json$/);
   } finally {
+    await runCli(projectDir, ["automate", "stop"], providerEnv(providers)).catch(() => undefined);
     await session.close();
   }
 });
@@ -2024,16 +2052,41 @@ test("integration docs describe integrate, mcp, and ensure-running", async () =>
   assert.match(commands, /automate ensure-running/);
   assert.match(readme, /Claude Code .*SessionStart.*Stop hooks/i);
   assert.match(readme, /Codex integration uses MCP \+ `AGENTS\.md` \+ the local daemon/i);
+  assert.match(readme, /memory_assess/);
+  assert.match(readme, /memory_compact_handoff/);
+  assert.match(readme, /memory_maintain/);
   assert.match(readme, /integrate --dry-run/);
   assert.match(readme, /integrate --status --output=json/);
   assert.match(readme, /integrate --repair/);
   assert.match(commands, /integrate --dry-run/);
   assert.match(commands, /integrate --status --output=json/);
   assert.match(commands, /integrate --repair/);
+  assert.match(commands, /memory_assess/);
+  assert.match(commands, /memory_compact_handoff/);
+  assert.match(commands, /memory_maintain/);
   assert.match(readme, /--dry-run.*without writing files/i);
   assert.match(commands, /--status.*read-only/i);
   assert.match(readme, /--repair.*managed mismatches/i);
   assert.match(roadmap, /safe Codex MCP registration via `integrate`/);
+});
+
+test("workflow docs describe richer MCP workflow as the current Phase 4 focus", async () => {
+  const [readme, commands, roadmap] = await Promise.all([
+    fs.readFile(path.join(REPO_ROOT, "README.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "commands.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "roadmap.md"), "utf8"),
+  ]);
+
+  assert.match(readme, /memory_assess/);
+  assert.match(readme, /memory_compact_handoff/);
+  assert.match(readme, /memory_maintain/);
+  assert.match(commands, /memory_assess/);
+  assert.match(commands, /memory_compact_handoff/);
+  assert.match(commands, /memory_maintain/);
+  assert.match(roadmap, /richer MCP workflow/i);
+  assert.match(roadmap, /memory_assess/);
+  assert.match(roadmap, /memory_compact_handoff/);
+  assert.match(roadmap, /memory_maintain/);
 });
 
 test("docs describe add and sync as the official external session commands", async () => {

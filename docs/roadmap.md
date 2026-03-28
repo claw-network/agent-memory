@@ -155,4 +155,10 @@ Phase 4 has started and its first milestone is complete:
 - Claude Code and Codex integration is available through `integrate`, with project-level Claude assets and safe global Codex MCP registration
 - `agent-memory mcp` exposes retrieval, health, and automation control tools for chat-client integrations
 
-Future work should continue within Phase 4 on broader importer coverage, report/export surfaces, and higher-level policy controls.
+Current richer MCP workflow focus inside Phase 4:
+
+- add higher-level workflow tools such as `memory_assess`, `memory_compact_handoff`, and `memory_maintain`
+- make Claude Code skills and Codex `AGENTS.md` guidance prefer workflow-first MCP usage
+- keep lower-level retrieval and automation tools available for finer control
+
+Future work should continue within Phase 4 on broader importer coverage, report/export surfaces, higher-level policy controls, and richer MCP workflow depth.

@@ -264,6 +264,7 @@ First milestone behavior:
 - Codex MCP registration is global but merged safely
 - Claude Code uses project MCP + project skills + `SessionStart` / `Stop` hooks
 - Codex uses MCP + `AGENTS.md` + the local daemon
+- Claude and Codex guidance now prefer `memory_assess`, `memory_compact_handoff`, and `memory_maintain` before lower-level MCP tools
 - `--dry-run` is read-only and does not write project or user files
 - `--status` is read-only and reports current integration health
 - `--status --output=json` returns machine-readable integration status
@@ -285,6 +286,24 @@ npx agent-memory mcp
 ```
 
 Starts the local stdio MCP server for chat-client integrations.
+
+Primary workflow tools:
+
+- `memory_assess`
+  Assess memory, automation, validation, and integration health in one response
+- `memory_compact_handoff`
+  Produce a compact-ready handoff summary before session end
+- `memory_maintain`
+  Ensure the daemon is running and perform one maintenance pass
+
+Lower-level tools remain available for finer control:
+
+- `memory_query`
+- `memory_status`
+- `memory_validate`
+- `automation_status`
+- `automation_ensure_running`
+- `automation_run_once`
 
 ## `agent-memory status`
 
