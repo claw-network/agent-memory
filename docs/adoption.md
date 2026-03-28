@@ -39,7 +39,7 @@ npx agent-memory init
 
 1. Run `init` once.
 2. Use `update` when current repository reality changes.
-3. Use `import add` and `import sync` to ingest external sessions.
+3. Use `add` and `sync` to ingest external sessions.
 4. Use `recall` to consolidate history into active memory.
 5. Use `query` when you need an answer from memory instead of reading all artifacts manually.
 6. Use `validate` to audit integrity and backlog health.
@@ -52,7 +52,7 @@ Run `recall` when:
 - next steps feel stale
 - gotchas are repetitive
 - `validate` warns about recall backlog
-- `import sync` completed but reported partial failures and you want to consolidate what was still imported
+- `sync` completed but reported partial failures and you want to consolidate what was still imported
 
 ## When To Use `query`
 

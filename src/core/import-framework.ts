@@ -489,7 +489,7 @@ function markSourceSyncResult(
 export async function syncSources(options: ImportSyncOptions): Promise<ImporterSyncResult[]> {
   const sources = await readSources(options.cwd);
   if (sources.length === 0) {
-    throw new Error("No import sources are registered. Run `agent-memory import add ...` first.");
+    throw new Error("No import sources are registered. Run `agent-memory add ...` first.");
   }
 
   await ensureHistoryLayout(options.cwd);

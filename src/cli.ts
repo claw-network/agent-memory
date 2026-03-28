@@ -9,7 +9,7 @@ import {
   runAutomateStatus,
   runAutomateStop,
 } from "./commands/automate";
-import { runImportAdd, runImportList, runImportSync } from "./commands/import";
+import { runAddSource, runSyncSources } from "./commands/sources";
 import { runInit } from "./commands/init";
 import { runIntegrate } from "./commands/integrate";
 import { runMcpServer } from "./commands/mcp";
@@ -42,9 +42,8 @@ function printHelp(): void {
   console.log("  agent-memory update [--yes] [--validate] [--provider=auto|codex|claude]");
   console.log("  agent-memory recall [--yes] [--provider=auto|codex|claude] [--source=all|local|imports]");
   console.log("  agent-memory query <question> [--provider=auto|codex|claude] [--scope=state|history|all] [--output=text|json]");
-  console.log("  agent-memory import add <type> <path> [--name <id>]");
-  console.log("  agent-memory import sync [<id>|--all] [--provider=auto|codex|claude]");
-  console.log("  agent-memory import list");
+  console.log("  agent-memory add <type> <path> [--name <id>]");
+  console.log("  agent-memory sync [<id>|--all] [--provider=auto|codex|claude]");
   console.log("  agent-memory integrate [claude|codex|all] [--dry-run] [--status] [--repair] [--output=text|json]");
   console.log("  agent-memory mcp");
   console.log("  agent-memory automate start|stop|status|run-once|ensure-running");
@@ -56,7 +55,8 @@ function printHelp(): void {
   console.log("  update    Refresh canonical memory state and write a new checkpoint and tool-run event.");
   console.log("  recall    Consolidate history into the canonical memory with preview and diff output.");
   console.log("  query     Answer a memory question with citations from bundle, history, or checkpoints.");
-  console.log("  import    Manage external session sources and sync them into history events.");
+  console.log("  add       Add external session sources.");
+  console.log("  sync      Sync external session sources into history events.");
   console.log("  integrate Write Claude Code and Codex integration files.");
   console.log("  mcp       Start the local MCP stdio server.");
   console.log("  automate  Run local automation daemon commands for import-sync and recall maintenance.");
@@ -376,100 +376,82 @@ async function main(): Promise<void> {
       }
       return;
     }
-    case "import": {
-      const [subcommand, ...importArgs] = restArgs;
-      if (!subcommand) {
-        throw new Error("Import command requires a subcommand: add, sync, or list.");
+    case "add": {
+      const [type, pathValue, ...tail] = restArgs;
+      if (!type || !pathValue) {
+        throw new Error("Usage: agent-memory add <type> <path> [--name <id>]");
       }
-
-      if (subcommand === "add") {
-        const [type, pathValue, ...tail] = importArgs;
-        if (!type || !pathValue) {
-          throw new Error("Usage: agent-memory import add <type> <path> [--name <id>]");
+      let name: string | null = null;
+      const remaining = [...tail];
+      while (remaining.length > 0) {
+        const value = remaining.shift();
+        if (!value) {
+          continue;
         }
-        let name: string | null = null;
-        const remaining = [...tail];
-        while (remaining.length > 0) {
-          const value = remaining.shift();
-          if (!value) {
-            continue;
+        if (value === "--name") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --name");
           }
-          if (value === "--name") {
-            const next = remaining.shift();
-            if (!next) {
-              throw new Error("Missing value for --name");
-            }
-            name = next;
-            continue;
+          name = next;
+          continue;
+        }
+        if (value.startsWith("--name=")) {
+          name = value.slice("--name=".length);
+          continue;
+        }
+        throw new Error(`Unknown argument: ${value}`);
+      }
+      const code = await runAddSource({ cwd: cwd(), type, path: pathValue, name });
+      if (code !== 0) {
+        exit(code);
+      }
+      return;
+    }
+    case "sync": {
+      let provider: ProviderPreference = "auto";
+      let all = false;
+      let target: string | null = null;
+      const remaining = [...restArgs];
+      while (remaining.length > 0) {
+        const value = remaining.shift();
+        if (!value) {
+          continue;
+        }
+        if (value.startsWith("--provider=")) {
+          provider = parseProvider(value.slice("--provider=".length));
+          continue;
+        }
+        if (value === "--provider") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --provider");
           }
-          if (value.startsWith("--name=")) {
-            name = value.slice("--name=".length);
-            continue;
-          }
+          provider = parseProvider(next);
+          continue;
+        }
+        if (value === "--all") {
+          all = true;
+          continue;
+        }
+        if (value.startsWith("--")) {
           throw new Error(`Unknown argument: ${value}`);
         }
-        const code = await runImportAdd({ cwd: cwd(), type, path: pathValue, name });
-        if (code !== 0) {
-          exit(code);
+        if (target) {
+          throw new Error(`Unexpected extra argument: ${value}`);
         }
-        return;
+        target = value;
       }
-
-      if (subcommand === "list") {
-        const code = await runImportList(cwd());
-        if (code !== 0) {
-          exit(code);
-        }
-        return;
+      const code = await runSyncSources({
+        cwd: cwd(),
+        provider,
+        target,
+        all,
+      });
+      if (code !== 0) {
+        exit(code);
       }
-
-      if (subcommand === "sync") {
-        let provider: ProviderPreference = "auto";
-        let all = false;
-        let target: string | null = null;
-        const remaining = [...importArgs];
-        while (remaining.length > 0) {
-          const value = remaining.shift();
-          if (!value) {
-            continue;
-          }
-          if (value.startsWith("--provider=")) {
-            provider = parseProvider(value.slice("--provider=".length));
-            continue;
-          }
-          if (value === "--provider") {
-            const next = remaining.shift();
-            if (!next) {
-              throw new Error("Missing value for --provider");
-            }
-            provider = parseProvider(next);
-            continue;
-          }
-          if (value === "--all") {
-            all = true;
-            continue;
-          }
-          if (value.startsWith("--")) {
-            throw new Error(`Unknown argument: ${value}`);
-          }
-          if (target) {
-            throw new Error(`Unexpected extra argument: ${value}`);
-          }
-          target = value;
-        }
-        const code = await runImportSync({
-          cwd: cwd(),
-          provider,
-          target,
-          all,
-        });
-        if (code !== 0) {
-          exit(code);
-        }
-        return;
-      }
-
-      throw new Error(`Unknown import subcommand: ${subcommand}`);
+      return;
     }
     case "integrate": {
       let target: IntegrationTarget = "all";

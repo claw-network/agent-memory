@@ -633,8 +633,8 @@ test("prepareRecall previews changes without writing files", async () => {
   ]);
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const beforeState = await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8");
   const beforeEvents = await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8");
@@ -681,8 +681,8 @@ test("recall --yes applies consolidation, updates cursor, and appends a tool-run
   ]);
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const result = await runCli(projectDir, ["recall", "--yes", "--provider=codex", "--source=imports"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
@@ -762,15 +762,15 @@ test("query can answer from imported history events before recall", async () => 
   ]);
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "codex-local", codexImportDir, "--name", "codex-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "codex-local", codexImportDir, "--name", "codex-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const result = await runCli(projectDir, ["query", "stale quickly", "--provider=codex", "--scope=history"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /\[event\] evt-000002 event:evt-000002/);
 });
 
-test("import add/list/sync registers sources and deduplicates imported sessions", async () => {
+test("add/sync register sources and deduplicate imported sessions", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
@@ -781,17 +781,13 @@ test("import add/list/sync registers sources and deduplicates imported sessions"
   ]);
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "codex-local", codexImportDir, "--name", "codex-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "codex-local", codexImportDir, "--name", "codex-a"], providerEnv(providers))).code, 0);
 
-  const listResult = await runCli(projectDir, ["import", "list"], providerEnv(providers));
-  assert.equal(listResult.code, 0, listResult.stderr);
-  assert.match(listResult.stdout, /codex-a/);
-
-  const syncResult1 = await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers));
+  const syncResult1 = await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers));
   assert.equal(syncResult1.code, 0, syncResult1.stderr);
   assert.match(syncResult1.stdout, /imported=1 skipped=0/);
 
-  const syncResult2 = await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers));
+  const syncResult2 = await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers));
   assert.equal(syncResult2.code, 0, syncResult2.stderr);
   assert.match(syncResult2.stdout, /imported=0 skipped=1/);
 
@@ -800,7 +796,7 @@ test("import add/list/sync registers sources and deduplicates imported sessions"
   assert.equal(state.maintenance.historyEventCount, 2);
 });
 
-test("history log stays prefix-stable across update, import sync, and recall", async () => {
+test("history log stays prefix-stable across update, sync, and recall", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
@@ -817,8 +813,8 @@ test("history log stays prefix-stable across update, import sync, and recall", a
   const eventsAfterUpdate = await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8");
   assert.ok(eventsAfterUpdate.startsWith(eventsAfterInit));
 
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
   const eventsAfterImport = await fs.readFile(path.join(projectDir, ".agent-memory", "history", "events.jsonl"), "utf8");
   assert.ok(eventsAfterImport.startsWith(eventsAfterUpdate));
 
@@ -827,22 +823,22 @@ test("history log stays prefix-stable across update, import sync, and recall", a
   assert.ok(eventsAfterRecall.startsWith(eventsAfterImport));
 });
 
-test("import sync handles real fixture snapshots for Claude and Codex local history", async () => {
+test("sync handles real fixture snapshots for Claude and Codex local history", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
   assert.equal(
-    (await runCli(projectDir, ["import", "add", "claude-local", fixturePath("claude-local"), "--name", "claude-real"], providerEnv(providers))).code,
+    (await runCli(projectDir, ["add", "claude-local", fixturePath("claude-local"), "--name", "claude-real"], providerEnv(providers))).code,
     0,
   );
   assert.equal(
-    (await runCli(projectDir, ["import", "add", "codex-local", fixturePath("codex-local"), "--name", "codex-real"], providerEnv(providers))).code,
+    (await runCli(projectDir, ["add", "codex-local", fixturePath("codex-local"), "--name", "codex-real"], providerEnv(providers))).code,
     0,
   );
 
-  const result = await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers));
+  const result = await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /claude-real: imported=3 skipped=0 failed=0/);
   assert.match(result.stdout, /codex-real: imported=3 skipped=0 failed=0/);
@@ -852,18 +848,18 @@ test("import sync handles real fixture snapshots for Claude and Codex local hist
   assert.equal((await readEvents(projectDir)).length, 7);
 });
 
-test("import sync reports partial failures without aborting the whole source", async () => {
+test("sync reports partial failures without aborting the whole source", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
   assert.equal(
-    (await runCli(projectDir, ["import", "add", "claude-local", fixturePath("claude-local-mixed"), "--name", "claude-mixed"], providerEnv(providers))).code,
+    (await runCli(projectDir, ["add", "claude-local", fixturePath("claude-local-mixed"), "--name", "claude-mixed"], providerEnv(providers))).code,
     0,
   );
 
-  const result = await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers));
+  const result = await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /claude-mixed: imported=1 skipped=0 failed=1/);
   assert.match(result.stdout, /failed .*bad\.jsonl: Invalid JSONL transcript/);
@@ -874,6 +870,13 @@ test("import sync reports partial failures without aborting the whole source", a
   assert.equal(mixedSource.lastSyncStatus, "failed");
   assert.match(mixedSource.lastSyncError, /Invalid JSONL transcript/);
   assert.equal(mixedSource.lastImportedCount, 1);
+});
+
+test("import list is removed", async () => {
+  const projectDir = await createFixtureProject();
+  const result = await runCli(projectDir, ["import", "list"]);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Unknown command: import/);
 });
 
 test("recall prints a no-op message when nothing new needs consolidation", async () => {
@@ -887,8 +890,8 @@ test("recall prints a no-op message when nothing new needs consolidation", async
   ]);
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
   assert.equal((await runCli(projectDir, ["recall", "--yes", "--provider=codex", "--source=imports"], providerEnv(providers))).code, 0);
 
   const stateBefore = await fs.readFile(path.join(projectDir, ".agent-memory", "state.json"), "utf8");
@@ -915,8 +918,8 @@ test("recall supports section-aware updates and protects unselected sections", a
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
   const beforeState = await readState(projectDir);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const result = await runCli(
     projectDir,
@@ -947,8 +950,8 @@ test("project-map-protected policy prevents project-map changes during recall al
   await fs.writeFile(path.join(projectDir, ".agent-memory", "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
   const beforeState = await readState(projectDir);
 
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
   assert.equal((await runCli(projectDir, ["recall", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const afterState = await readState(projectDir);
@@ -969,8 +972,8 @@ test("recall summary reports conservative dedupe merges", async () => {
   ]);
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const result = await runCli(projectDir, ["recall", "--provider=codex", "--show-diff"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
@@ -992,8 +995,8 @@ test("recall preview includes grouped unrecalled history summary", async () => {
   ]);
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const result = await runCli(projectDir, ["recall", "--provider=codex", "--source=imports"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
@@ -1016,8 +1019,8 @@ test("recall compresses near-duplicate current focus output deterministically", 
   ]);
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
   assert.equal((await runCli(projectDir, ["recall", "--yes", "--provider=codex", "--source=imports"], providerEnv(providers))).code, 0);
 
   const state = await readState(projectDir);
@@ -1043,8 +1046,8 @@ test("recall groups duplicate local and imported history before provider synthes
   ]);
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const state = await readState(projectDir);
   state.maintenance.historyEventCount = 3;
@@ -1113,17 +1116,17 @@ test("validate fails on damaged history and source registry", async () => {
   assert.match(result.stdout, /sources:read/);
 });
 
-test("validate warns when the last import sync failed but state is still usable", async () => {
+test("validate warns when the last sync failed but state is still usable", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
   assert.equal(
-    (await runCli(projectDir, ["import", "add", "claude-local", fixturePath("claude-local-mixed"), "--name", "claude-mixed"], providerEnv(providers))).code,
+    (await runCli(projectDir, ["add", "claude-local", fixturePath("claude-local-mixed"), "--name", "claude-mixed"], providerEnv(providers))).code,
     0,
   );
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const result = await runCli(projectDir, ["validate"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
@@ -1235,7 +1238,7 @@ test("automate run-once writes an idle latest-run result when no work is pending
   assert.equal(latestRun.recall.attempted, false);
 });
 
-test("automate run-once performs import sync and aggressive recall even with local file changes", async () => {
+test("automate run-once performs sync and aggressive recall even with local file changes", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
@@ -1247,7 +1250,7 @@ test("automate run-once performs import sync and aggressive recall even with loc
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
   await fs.appendFile(path.join(projectDir, "README.md"), "dirty workspace change\n", "utf8");
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
 
   const result = await runCli(projectDir, ["automate", "run-once"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
@@ -1274,7 +1277,7 @@ test("automate run-once records recalled_noop when unrecalled events do not chan
   ]);
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
   assert.equal((await runCli(projectDir, ["automate", "run-once"], providerEnv(providers))).code, 0);
 
   const state = await readState(projectDir);
@@ -1317,7 +1320,7 @@ test("automate run-once records recalled_noop when unrecalled events do not chan
   assert.ok(latestRun.recall.noopReason);
 });
 
-test("automate run-once reports failure when import sync cannot reach a source path", async () => {
+test("automate run-once reports failure when sync cannot reach a source path", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
@@ -1334,7 +1337,7 @@ test("automate run-once reports failure when import sync cannot reach a source p
   state.maintenance.lastRecalledAt = "2026-03-27T00:00:00.000Z";
   state.maintenance.lastRecalledEventId = "evt-000001";
   await writeStateFile(projectDir, state);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
   await fs.rm(claudeImportDir, { recursive: true, force: true });
 
   const result = await runCli(projectDir, ["automate", "run-once"], providerEnv(providers));
@@ -1773,8 +1776,8 @@ test("status reports backlog, source health, checkpoint drift, and suggested nex
   ]);
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
   const result = await runCli(projectDir, ["status"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
   assert.match(result.stdout, /State:/);
@@ -1798,8 +1801,8 @@ test("status summarizes grouped unrecalled history by default", async () => {
   ]);
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const state = await readState(projectDir);
   state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-27T00:00:00.000Z";
@@ -1826,8 +1829,8 @@ test("status summary omits grouped items beyond the first five", async () => {
   );
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-a"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const state = await readState(projectDir);
   state.maintenance.recallCursors.all.lastRecalledAt = "2026-03-27T00:00:00.000Z";
@@ -1905,8 +1908,8 @@ test("validate warns when recall backlog grows too large", async () => {
   );
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--validate", "--provider=codex"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "add", "claude-local", claudeImportDir, "--name", "claude-many"], providerEnv(providers))).code, 0);
-  assert.equal((await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["add", "claude-local", claudeImportDir, "--name", "claude-many"], providerEnv(providers))).code, 0);
+  assert.equal((await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers))).code, 0);
 
   const result = await runCli(projectDir, ["validate"], providerEnv(providers));
   assert.equal(result.code, 0, result.stderr);
@@ -1929,7 +1932,7 @@ test("validate fails on an invalid config file", async () => {
   assert.match(result.stdout, /config:schema/);
 });
 
-test("recall, query, and import sync reject an old schema state", async () => {
+test("recall, query, and sync reject an old schema state", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
@@ -1944,7 +1947,7 @@ test("recall, query, and import sync reject an old schema state", async () => {
   assert.equal(queryResult.code, 1);
   assert.match(queryResult.stderr, /Invalid state|schemaVersion/i);
 
-  const syncResult = await runCli(projectDir, ["import", "sync", "--all", "--provider=codex"], providerEnv(providers));
+  const syncResult = await runCli(projectDir, ["sync", "--all", "--provider=codex"], providerEnv(providers));
   assert.equal(syncResult.code, 1);
   assert.match(syncResult.stderr, /Invalid state|schemaVersion/i);
 });
@@ -2031,4 +2034,22 @@ test("integration docs describe integrate, mcp, and ensure-running", async () =>
   assert.match(commands, /--status.*read-only/i);
   assert.match(readme, /--repair.*managed mismatches/i);
   assert.match(roadmap, /safe Codex MCP registration via `integrate`/);
+});
+
+test("docs describe add and sync as the official external session commands", async () => {
+  const [readme, commands, roadmap, adoption] = await Promise.all([
+    fs.readFile(path.join(REPO_ROOT, "README.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "commands.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "roadmap.md"), "utf8"),
+    fs.readFile(path.join(REPO_ROOT, "docs", "adoption.md"), "utf8"),
+  ]);
+
+  assert.match(readme, /agent-memory add/);
+  assert.match(readme, /agent-memory sync/);
+  assert.doesNotMatch(readme, /agent-memory import list/);
+  assert.match(commands, /## `agent-memory add`/);
+  assert.match(commands, /## `agent-memory sync`/);
+  assert.doesNotMatch(commands, /## `agent-memory import`/);
+  assert.match(roadmap, /external session ingestion through `add` and `sync`/);
+  assert.match(adoption, /Use `add` and `sync` to ingest external sessions/);
 });

@@ -16,7 +16,7 @@ function summarizeLatestRun(latestRun: Awaited<ReturnType<typeof getAutomationSt
   return [
     `- last run status: ${latestRun.status}`,
     `- last run finishedAt: ${latestRun.finishedAt}`,
-    `- import sync attempted: ${latestRun.importSync.attempted ? "yes" : "no"}`,
+    `- sync attempted: ${latestRun.importSync.attempted ? "yes" : "no"}`,
     `- recall attempted: ${latestRun.recall.attempted ? "yes" : "no"}`,
     `- recall applied: ${latestRun.recall.applied ? "yes" : "no"}`,
     `- recall grouped items: ${latestRun.recall.groupedItemCount}`,
@@ -63,7 +63,7 @@ export async function runAutomateRunOnce(options: AutomationCommandOptions): Pro
   const result = await runAutomationCycle(options.cwd);
   console.log(`Automation run status: ${result.status}`);
   console.log(`- provider: ${result.provider}`);
-  console.log(`- importSync attempted: ${result.importSync.attempted ? "yes" : "no"}`);
+  console.log(`- sync attempted: ${result.importSync.attempted ? "yes" : "no"}`);
   console.log(`- recall attempted: ${result.recall.attempted ? "yes" : "no"}`);
   console.log(`- recall applied: ${result.recall.applied ? "yes" : "no"}`);
   console.log(`- raw events: ${result.recall.rawEventCount}`);

@@ -14,7 +14,7 @@ Current v1 includes:
 - active bundle refresh through `update`
 - manual history consolidation through `recall`
 - cited retrieval through `query`
-- external session ingestion through `import add`, `import sync`, and `import list`
+- external session ingestion through `add` and `sync`
 - system health auditing through `validate`
 - built-in source adapters for `claude-local` and `codex-local`
 - readable projections in `docs/agent-memory/`
@@ -33,7 +33,7 @@ V1 intentionally does not include:
 
 - migration from older `agent-memory` schemas or markers
 - background or scheduled recall runs
-- automatic consolidation during `update` or `import sync`
+- automatic consolidation during `update` or `sync`
 - embeddings, vector search, or external databases
 - manual editing workflows for history events or checkpoints
 - source adapters beyond the built-in local Claude/Codex importers
@@ -47,7 +47,7 @@ These exclusions are intentional. V1 is the first complete memory lifecycle, not
 
 V1 should be considered healthy when these conditions hold:
 
-- `init`, `update`, `recall`, `query`, `import`, and `validate` all work end-to-end
+- `init`, `update`, `recall`, `query`, `add`, `sync`, and `validate` all work end-to-end
 - history stays append-only and checkpoints remain readable
 - `recall` can remove stale next steps, merge repeated gotchas, and compress noisy current focus output
 - `query` can answer from bundle, history, and checkpoints with usable citations

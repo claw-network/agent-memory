@@ -3,7 +3,7 @@ import { registerSource, listRegisteredSources, syncSources } from "../core/impo
 import { readState, writeState } from "../core/state-store";
 import type { ImportAddOptions, ImportSyncOptions } from "../types";
 
-export async function runImportAdd(options: ImportAddOptions): Promise<number> {
+export async function runAddSource(options: ImportAddOptions): Promise<number> {
   const state = await readState(options.cwd);
   const source = await registerSource(options);
   const sources = await listRegisteredSources(options.cwd);
@@ -20,28 +20,7 @@ export async function runImportAdd(options: ImportAddOptions): Promise<number> {
   return 0;
 }
 
-export async function runImportList(cwd: string): Promise<number> {
-  await readState(cwd);
-  const sources = await listRegisteredSources(cwd);
-
-  if (sources.length === 0) {
-    console.log("No import sources are registered.");
-    return 0;
-  }
-
-  for (const source of sources) {
-    console.log(
-      `- ${source.id} (${source.type}) path=${source.path} lastSyncedAt=${source.lastSyncedAt ?? "never"} status=${source.lastSyncStatus} imported=${source.lastImportedCount}`,
-    );
-    if (source.lastSyncError) {
-      console.log(`  lastSyncError: ${source.lastSyncError}`);
-    }
-  }
-
-  return 0;
-}
-
-export async function runImportSync(options: ImportSyncOptions): Promise<number> {
+export async function runSyncSources(options: ImportSyncOptions): Promise<number> {
   const state = await readState(options.cwd);
   const results = await syncSources(options);
   const events = await readHistoryEvents(options.cwd);

@@ -11,7 +11,7 @@ function suggestedNextAction(input: {
   changedSections: string[];
 }): string {
   if (input.hasFailedSource) {
-    return "Run `agent-memory import sync --all` to retry failed sources.";
+    return "Run `agent-memory sync --all` to retry failed sources.";
   }
   if (input.unrecalledAll > 0) {
     return "Run `agent-memory recall` to consolidate unrecalled history.";

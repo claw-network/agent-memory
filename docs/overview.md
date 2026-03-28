@@ -51,7 +51,9 @@ That is the purpose of the current architecture.
   Inspect backlog, source health, and checkpoint drift before acting
 - `query`
   Answer a question from bundle, history, and checkpoints
-- `import`
+- `add`
+  Register an external session source
+- `sync`
   Bring external sessions into the history layer
 - `validate`
   Audit the whole system, not just the current bundle

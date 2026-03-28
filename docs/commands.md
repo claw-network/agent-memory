@@ -1,12 +1,13 @@
 # Commands
 
-`agent-memory` exposes six command surfaces:
+`agent-memory` exposes these command surfaces:
 
 - `init`
 - `update`
 - `recall`
 - `query`
-- `import`
+- `add`
+- `sync`
 - `automate`
 - `integrate`
 - `mcp`
@@ -41,7 +42,7 @@ This applies to:
 - `update`
 - `recall`
 - `query`
-- `import sync`
+- `sync`
 
 Recall-oriented commands also read defaults from `/.agent-memory/config.json`.
 
@@ -142,25 +143,23 @@ npx agent-memory query "what should I do next?" --output=json
 
 Projects can also override mode-specific retrieval instructions through `.agent-memory/config.json`.
 
-## `agent-memory import`
+## `agent-memory add`
 
 ### Add a source
 
 ```bash
-npx agent-memory import add claude-local ~/.claude --name claude
+npx agent-memory add claude-local ~/.claude --name claude
 ```
+
+Use `add` to register an external session source.
+
+## `agent-memory sync`
 
 ### Sync one source or all sources
 
 ```bash
-npx agent-memory import sync claude
-npx agent-memory import sync --all
-```
-
-### List registered sources
-
-```bash
-npx agent-memory import list
+npx agent-memory sync claude
+npx agent-memory sync --all
 ```
 
 Current built-in source types:
@@ -168,9 +167,9 @@ Current built-in source types:
 - `claude-local`
 - `codex-local`
 
-`import sync` normalizes external sessions into standard history events. It does not directly rewrite the active bundle; use `recall` for that.
+`sync` normalizes external sessions into standard history events. It does not directly rewrite the active bundle; use `recall` for that.
 
-`import sync` is resilient to partial failures:
+`sync` is resilient to partial failures:
 
 - valid sessions are imported
 - duplicates are skipped
@@ -212,7 +211,7 @@ npx agent-memory automate ensure-running
 First milestone behavior:
 
 - the daemon is local and built in, not cron-backed
-- each cycle can run `import sync --all`
+- each cycle can run `sync --all`
 - each cycle can auto-apply `recall`
 - dirty worktrees do not block the cycle
 - runtime metadata lives in `.agent-memory/automation/`
@@ -344,6 +343,7 @@ Important interpretation:
 - `automate` = run local automation for import-sync and recall
 - `integrate` = connect Claude Code and Codex to agent-memory
 - `mcp` = expose agent-memory as a local MCP server
-- `import` = ingest external sessions
+- `add` = add external session sources
+- `sync` = sync external session sources into history events
 - `validate` = audit the system
 - `status` = inspect maintenance state before acting

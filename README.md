@@ -124,16 +124,23 @@ npx agent-memory query "what changed recently?" --output=json
 Bundle citations can also be cross-linked to the generated projection docs under `docs/agent-memory/`.
 Projects can override retrieval instructions per query mode through `.agent-memory/config.json`.
 
-### Import external sessions
+### Add external session sources
 
 ```bash
-npx agent-memory import add claude-local ~/.claude --name claude
-npx agent-memory import sync --all
+npx agent-memory add claude-local ~/.claude --name claude
 ```
 
-Registers external history sources and normalizes imported sessions into durable history events.
+Registers an external session source.
 
-`import sync` may partially succeed:
+### Sync external session sources
+
+```bash
+npx agent-memory sync --all
+```
+
+Normalizes external sessions into durable history events.
+
+`sync` may partially succeed:
 
 - imported sessions become history events
 - duplicate sessions are skipped
@@ -167,7 +174,7 @@ npx agent-memory automate stop
 The first Phase 4 milestone is a local built-in automation daemon.
 
 - it runs as a repo-local background process
-- it can run `import sync --all` and `recall --yes` on a schedule
+- it can run `sync --all` and `recall --yes` on a schedule
 - it writes runtime state under `.agent-memory/automation/`
 - it records the latest machine-readable run result in `.agent-memory/automation/latest-run.json`
 - it uses aggressive auto-apply recall by default
@@ -237,7 +244,7 @@ Audits state integrity, history continuity, checkpoint presence, projection alig
 
 Common cases:
 
-- `import sync` reports `failed=...`
+- `sync` reports `failed=...`
   The source is still registered, but one or more session files could not be parsed or normalized. Run `agent-memory validate` to see whether this is now a warning condition.
 - `recall` says `Nothing to recall`
   Either there are no unrecalled events for the selected scope, or consolidation produced no durable bundle changes.
