@@ -285,11 +285,18 @@ npm run dogfood:repair
 npm run dogfood:status
 ```
 
+Optional provider override:
+
+```bash
+AGENT_MEMORY_DOGFOOD_PROVIDER=claude npm run dogfood:init
+```
+
 Current dogfood behavior:
 
 - repo-root `.agent-memory/`, `docs/agent-memory/`, `.mcp.json`, `.claude/`, and `AGENTS.md` form the stable self-host baseline
 - `exercise` runs in an isolated git worktree under `temp/dogfood/worktree`
 - sandboxed `HOME=temp/dogfood/home` keeps Codex integration rehearsal away from your real user config
+- dogfood structured runs now do a real provider preflight instead of trusting `--version` alone, so `auto` can fall back when one backend is installed but not authenticated
 - reports are written under `temp/dogfood/reports/`
 - `repair` first does deterministic maintenance/integration repair, then can escalate to whole-repo provider-driven repair if source-level breakage remains
 - successful repair only applies a patch back to the root worktree; it does not auto-commit or auto-push

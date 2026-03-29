@@ -21,13 +21,30 @@ interface ResolvedProvider {
   binary: string;
 }
 
+interface ProviderProbeResult {
+  ok: boolean;
+  binary: string;
+  reason: "ok" | "missing" | "auth" | "runtime";
+  message: string;
+}
+
 const PROVIDER_BIN_ENV: Record<ProviderName, string> = {
   codex: "AGENT_MEMORY_CODEX_BIN",
   claude: "AGENT_MEMORY_CLAUDE_BIN",
 };
 
-function getConfiguredBinary(name: ProviderName): string {
-  return process.env[PROVIDER_BIN_ENV[name]] || name;
+const STRUCTURED_PROBE_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["ok"],
+  properties: {
+    ok: { type: "boolean" },
+  },
+};
+const STRUCTURED_PROBE_PROMPT = "Return exactly one JSON object matching the schema. Set ok=true.";
+
+function getConfiguredBinary(name: ProviderName, env: NodeJS.ProcessEnv = process.env): string {
+  return env[PROVIDER_BIN_ENV[name]] || name;
 }
 
 function isAuthFailure(output: string): boolean {
@@ -91,11 +108,16 @@ async function runCommand(
   options: {
     cwd: string;
     stdin?: string;
+    env?: NodeJS.ProcessEnv;
   },
 ): Promise<CommandResult> {
   return new Promise((resolve) => {
     const child = spawn(binary, args, {
       cwd: options.cwd,
+      env: {
+        ...process.env,
+        ...(options.env ?? {}),
+      },
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -139,8 +161,8 @@ async function runCommand(
   });
 }
 
-async function isBinaryAvailable(binary: string, cwd: string): Promise<boolean> {
-  const result = await runCommand(binary, ["--version"], { cwd });
+async function isBinaryAvailable(binary: string, cwd: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+  const result = await runCommand(binary, ["--version"], { cwd, env });
   if (result.error) {
     return false;
   }
@@ -148,24 +170,162 @@ async function isBinaryAvailable(binary: string, cwd: string): Promise<boolean> 
   return result.code === 0;
 }
 
-async function resolveProvider(preference: ProviderPreference, cwd: string): Promise<ResolvedProvider> {
+async function probeStructuredCodex(binary: string, cwd: string, env: NodeJS.ProcessEnv): Promise<ProviderProbeResult> {
+  const tempDir = await mkdtemp(join(tmpdir(), "agent-memory-codex-probe-"));
+  const schemaPath = join(tempDir, "probe-schema.json");
+  const outputPath = join(tempDir, "probe-output.json");
+
+  try {
+    await writeFile(schemaPath, JSON.stringify(STRUCTURED_PROBE_SCHEMA), "utf8");
+    const result = await runCommand(
+      binary,
+      [
+        "exec",
+        "-C",
+        cwd,
+        "--skip-git-repo-check",
+        "--ephemeral",
+        "--sandbox",
+        "read-only",
+        "--output-schema",
+        schemaPath,
+        "-o",
+        outputPath,
+        "-",
+      ],
+      {
+        cwd,
+        env,
+        stdin: STRUCTURED_PROBE_PROMPT,
+      },
+    );
+
+    const combinedOutput = `${result.stdout}\n${result.stderr}`.trim();
+    if (result.error) {
+      return {
+        ok: false,
+        binary,
+        reason: "missing",
+        message: `Failed to start Codex: ${result.error.message}`,
+      };
+    }
+
+    if (result.code !== 0) {
+      return {
+        ok: false,
+        binary,
+        reason: isAuthFailure(combinedOutput) ? "auth" : "runtime",
+        message: combinedOutput || `Codex probe failed with exit code ${result.code}.`,
+      };
+    }
+
+    return {
+      ok: true,
+      binary,
+      reason: "ok",
+      message: "Codex structured probe succeeded.",
+    };
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function probeStructuredClaude(binary: string, cwd: string, env: NodeJS.ProcessEnv): Promise<ProviderProbeResult> {
+  const result = await runCommand(
+    binary,
+    [
+      "-p",
+      "--no-session-persistence",
+      "--permission-mode",
+      "dontAsk",
+      "--output-format",
+      "text",
+      "--json-schema",
+      JSON.stringify(STRUCTURED_PROBE_SCHEMA),
+      "--tools",
+      "Bash,Read",
+      "--add-dir",
+      cwd,
+      STRUCTURED_PROBE_PROMPT,
+    ],
+    { cwd, env },
+  );
+
+  const combinedOutput = `${result.stdout}\n${result.stderr}`.trim();
+  if (result.error) {
+    return {
+      ok: false,
+      binary,
+      reason: "missing",
+      message: `Failed to start Claude Code: ${result.error.message}`,
+    };
+  }
+
+  if (result.code !== 0) {
+    return {
+      ok: false,
+      binary,
+      reason: isAuthFailure(combinedOutput) ? "auth" : "runtime",
+      message: combinedOutput || `Claude Code probe failed with exit code ${result.code}.`,
+    };
+  }
+
+  return {
+    ok: true,
+    binary,
+    reason: "ok",
+    message: "Claude Code structured probe succeeded.",
+  };
+}
+
+export async function probeProviderForStructuredUse(
+  name: ProviderName,
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ProviderProbeResult> {
+  const binary = getConfiguredBinary(name, env);
+  if (!(await isBinaryAvailable(binary, cwd, env))) {
+    return {
+      ok: false,
+      binary,
+      reason: "missing",
+      message: `${name} is not installed or not runnable.`,
+    };
+  }
+
+  if (name === "codex") {
+    return await probeStructuredCodex(binary, cwd, env);
+  }
+
+  return await probeStructuredClaude(binary, cwd, env);
+}
+
+export async function resolveProviderForStructuredUse(
+  preference: ProviderPreference,
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ResolvedProvider> {
   const order: ProviderName[] = preference === "auto" ? ["codex", "claude"] : [preference];
+  const failures: string[] = [];
 
   for (const name of order) {
-    const binary = getConfiguredBinary(name);
-    if (await isBinaryAvailable(binary, cwd)) {
-      return { name, binary };
+    const probe = await probeProviderForStructuredUse(name, cwd, env);
+    if (probe.ok) {
+      return { name, binary: probe.binary };
+    }
+
+    failures.push(`${name}: ${probe.message}`);
+    if (preference !== "auto") {
+      throw new Error(
+        probe.reason === "auth"
+          ? `${name === "codex" ? "Codex" : "Claude Code"} is installed but authentication is not ready: ${probe.message}`
+          : `${name === "codex" ? "Codex" : "Claude Code"} is not available for structured use: ${probe.message}`,
+      );
     }
   }
 
-  if (preference === "auto") {
-    throw new Error(
-      "No supported agent provider is available. Install Codex or Claude Code, or set AGENT_MEMORY_CODEX_BIN / AGENT_MEMORY_CLAUDE_BIN.",
-    );
-  }
-
   throw new Error(
-    `Requested provider "${preference}" is not available. Install it or set ${PROVIDER_BIN_ENV[preference]}.`,
+    `No supported agent provider is available for structured use. ${failures.join(" | ") || "Install Codex or Claude Code, or set AGENT_MEMORY_CODEX_BIN / AGENT_MEMORY_CLAUDE_BIN."}`,
   );
 }
 
@@ -282,7 +442,7 @@ export async function invokeProvider(
   preference: ProviderPreference,
   input: ProviderInvocation,
 ): Promise<ProviderInvocationResult> {
-  const provider = await resolveProvider(preference, input.cwd);
+  const provider = await resolveProviderForStructuredUse(preference, input.cwd);
   if (provider.name === "codex") {
     return invokeCodex(provider, input);
   }
