@@ -393,6 +393,13 @@ async function runDogfood(repoDir, script, env = {}, allowFailure = false) {
   return await runCommand("npm", ["run", script], { cwd: repoDir, env, allowFailure });
 }
 
+function dogfoodTestEnv(repoDir, extra = {}) {
+  return {
+    HOME: path.join(repoDir, "temp", "dogfood", "home"),
+    ...extra,
+  };
+}
+
 test("classifyChangedPaths separates managed dogfood surfaces from repo paths", async () => {
   const { classifyChangedPaths } = await importDogfoodLib();
   const classified = classifyChangedPaths(
@@ -413,6 +420,7 @@ test("dogfood:init builds a self-host baseline in the repo root clone", { concur
     AGENT_MEMORY_CODEX_BIN: providers.codexPath,
     AGENT_MEMORY_CLAUDE_BIN: providers.claudePath,
     AGENT_MEMORY_DOGFOOD_SKIP_BUILD: "1",
+    ...dogfoodTestEnv(repoDir),
   });
   assert.equal(result.code, 0, result.stderr);
 
@@ -433,6 +441,7 @@ test("dogfood:exercise runs in an isolated worktree and writes the latest report
     AGENT_MEMORY_CODEX_BIN: providers.codexPath,
     AGENT_MEMORY_CLAUDE_BIN: providers.claudePath,
     AGENT_MEMORY_DOGFOOD_SKIP_BUILD: "1",
+    ...dogfoodTestEnv(repoDir),
   };
 
   await runDogfood(repoDir, "dogfood:init", env);
@@ -458,6 +467,7 @@ test("dogfood:repair fixes managed drift and applies the patch back to the root 
     AGENT_MEMORY_CODEX_BIN: providers.codexPath,
     AGENT_MEMORY_CLAUDE_BIN: providers.claudePath,
     AGENT_MEMORY_DOGFOOD_SKIP_BUILD: "1",
+    ...dogfoodTestEnv(repoDir),
   };
 
   await runDogfood(repoDir, "dogfood:init", env);
@@ -483,6 +493,7 @@ test("dogfood:repair can enter whole-repo agentic repair and fix source-level br
     AGENT_MEMORY_CLAUDE_BIN: providers.claudePath,
     DOGFOOD_FAKE_REPAIR_MODE: "fix-test-script",
     AGENT_MEMORY_DOGFOOD_SKIP_BUILD: "1",
+    ...dogfoodTestEnv(repoDir),
   };
 
   await runDogfood(repoDir, "dogfood:init", env);

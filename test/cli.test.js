@@ -2343,9 +2343,10 @@ test("README and roadmap describe the self-host dogfood workflow", async () => {
   assert.match(readme, /npm run dogfood:exercise/);
   assert.match(readme, /npm run dogfood:repair/);
   assert.match(readme, /isolated git worktree/i);
-  assert.match(readme, /sandboxed `HOME=temp\/dogfood\/home`/i);
+  assert.match(readme, /inherits your real `HOME` by default/i);
   assert.match(roadmap, /self-host dogfood milestone/i);
   assert.match(roadmap, /dogfood:init\|exercise\|repair\|status/);
+  assert.match(roadmap, /inheriting the operator's real HOME by default/i);
 });
 
 test("docs describe add and sync as the official external session commands", async () => {

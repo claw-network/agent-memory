@@ -196,7 +196,6 @@ export function dogfoodEnv(paths, extra = {}) {
   return {
     ...process.env,
     ...extra,
-    HOME: paths.homeDir,
   };
 }
 

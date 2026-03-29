@@ -295,7 +295,8 @@ Current dogfood behavior:
 
 - repo-root `.agent-memory/`, `docs/agent-memory/`, `.mcp.json`, `.claude/`, and `AGENTS.md` form the stable self-host baseline
 - `exercise` runs in an isolated git worktree under `temp/dogfood/worktree`
-- sandboxed `HOME=temp/dogfood/home` keeps Codex integration rehearsal away from your real user config
+- dogfood now inherits your real `HOME` by default, so Codex and Claude use the same user-level auth/config they would during normal local work
+- tests and other isolated runs can still override `HOME` explicitly when they need a sandbox
 - dogfood structured runs now do a real provider preflight instead of trusting `--version` alone, so `auto` can fall back when one backend is installed but not authenticated
 - reports are written under `temp/dogfood/reports/`
 - `repair` first does deterministic maintenance/integration repair, then can escalate to whole-repo provider-driven repair if source-level breakage remains

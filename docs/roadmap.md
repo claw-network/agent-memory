@@ -173,5 +173,5 @@ Current self-host dogfood milestone inside Phase 4:
 
 - the repository can now use itself as a dogfood arena through `npm run dogfood:init|exercise|repair|status`
 - stable repo-root memory and integration assets can be maintained as the committed dogfood baseline
-- exercise runs in an isolated git worktree with sandboxed HOME for safe Codex integration rehearsal
+- exercise runs in an isolated git worktree while inheriting the operator's real HOME by default
 - repair can first perform deterministic maintenance fixes, then escalate to whole-repo provider-driven repair before applying a patch back to the root worktree
