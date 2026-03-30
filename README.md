@@ -73,6 +73,22 @@ Readable projections still live in:
 
 An entry block is also written into the preferred top-level entry file.
 
+## Installation
+
+Install `agent-memory` from the npm registry as a project dependency:
+
+```bash
+npm install -D @agent-connect/memory
+```
+
+or:
+
+```bash
+pnpm add -D @agent-connect/memory
+```
+
+After installation, use the local CLI with `npx agent-memory ...`.
+
 ## How It Works
 
 `agent-memory` no longer treats markdown files as the source of truth.
