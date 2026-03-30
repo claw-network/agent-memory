@@ -24,13 +24,55 @@ export function dogfoodProviderPreference(env = process.env) {
 }
 
 async function loadStructuredProviderResolver(rootDir) {
-  const moduleUrl = pathToFileURL(join(rootDir, "dist", "core", "provider-adapters.js")).href;
+  const moduleUrl = pathToFileURL(join(rootDir, "node_modules", "@agent-connect", "memory", "dist", "core", "provider-adapters.js")).href;
   return await import(moduleUrl);
 }
 
+async function readPackageVersion(rootDir) {
+  const pkg = JSON.parse(await readFile(join(rootDir, "package.json"), "utf8"));
+  return pkg.version;
+}
+
+function dogfoodPackageSpec(rootDir, env = process.env) {
+  if (env.AGENT_MEMORY_DOGFOOD_PACKAGE_SPEC) {
+    return env.AGENT_MEMORY_DOGFOOD_PACKAGE_SPEC;
+  }
+
+  return null;
+}
+
+async function installedPackageSpec(rootDir) {
+  const installedPackagePath = join(rootDir, "node_modules", "@agent-connect", "memory", "package.json");
+  if (!existsSync(installedPackagePath)) {
+    return null;
+  }
+
+  const pkg = JSON.parse(await readFile(installedPackagePath, "utf8"));
+  return pkg.version ? `@agent-connect/memory@${pkg.version}` : "@agent-connect/memory";
+}
+
+export async function ensureDogfoodAgentMemoryInstalled(rootDir, env = process.env) {
+  const desiredSpec = dogfoodPackageSpec(rootDir, env) ?? `@agent-connect/memory@${await readPackageVersion(rootDir)}`;
+  const installedSpec = await installedPackageSpec(rootDir);
+  if (installedSpec === desiredSpec) {
+    return desiredSpec;
+  }
+
+  await runCommand(
+    "npm",
+    ["install", "-D", "--no-fund", "--no-audit", desiredSpec],
+    {
+      cwd: rootDir,
+      env,
+    },
+  );
+
+  return desiredSpec;
+}
+
 export async function resolveDogfoodStructuredProvider(rootDir, preference, cwd, env) {
-  if (!existsSync(join(rootDir, "dist", "core", "provider-adapters.js"))) {
-    throw new Error("Dogfood structured provider resolution requires dist/core/provider-adapters.js to exist.");
+  if (!existsSync(join(rootDir, "node_modules", "@agent-connect", "memory", "dist", "core", "provider-adapters.js"))) {
+    throw new Error("Dogfood structured provider resolution requires an installed @agent-connect/memory package.");
   }
 
   const { resolveProviderForStructuredUse } = await loadStructuredProviderResolver(rootDir);
@@ -186,7 +228,7 @@ export async function runNpmScript(cwd, scriptName, options = {}) {
 }
 
 export async function runAgentMemoryCli(cwd, args, options = {}) {
-  return await runCommand(process.execPath, [join(cwd, "dist", "cli.js"), ...args], {
+  return await runCommand("npm", ["exec", "--", "agent-memory", ...args], {
     cwd,
     ...options,
   });
@@ -221,16 +263,6 @@ async function ensureNodeModulesLink(rootDir, worktreeDir) {
   }
 
   await symlink(source, target, "dir");
-}
-
-async function ensureWorktreeDist(rootDir, worktreeDir) {
-  const source = join(rootDir, "dist");
-  const target = join(worktreeDir, "dist");
-  if (!existsSync(source) || existsSync(target)) {
-    return;
-  }
-
-  await cp(source, target, { recursive: true, force: true });
 }
 
 async function copyUntrackedFile(rootDir, worktreeDir, relativePath) {
@@ -301,7 +333,6 @@ export async function createDogfoodWorktree(rootDir, paths) {
   });
   await ensureNodeModulesLink(rootDir, paths.worktreeDir);
   await overlayRootSnapshot(rootDir, paths.worktreeDir);
-  await ensureWorktreeDist(rootDir, paths.worktreeDir);
   const baselineCommit = await createBaselineSnapshotCommit(paths.worktreeDir);
   return {
     worktreeDir: paths.worktreeDir,
@@ -389,7 +420,7 @@ export function parseTestSummary(result) {
 }
 
 export async function startMcpSession(worktreeDir, env) {
-  const child = spawn(process.execPath, [join(worktreeDir, "dist", "cli.js"), "mcp"], {
+  const child = spawn("npm", ["exec", "--", "agent-memory", "mcp"], {
     cwd: worktreeDir,
     env: {
       ...process.env,
@@ -803,9 +834,7 @@ export async function runWholeRepoRepair(worktreeDir, paths, options) {
 export async function initSelfHostBaseline(rootDir, paths, options = {}) {
   const env = dogfoodEnv(paths, options.env ?? {});
   await ensureDogfoodLayout(paths);
-  if (env.AGENT_MEMORY_DOGFOOD_SKIP_BUILD !== "1" && !existsSync(join(rootDir, "dist", "cli.js"))) {
-    await runNpmScript(rootDir, "build", { env });
-  }
+  await ensureDogfoodAgentMemoryInstalled(rootDir, env);
   const provider = (await resolveDogfoodStructuredProvider(rootDir, options.provider ?? "auto", rootDir, env)).name;
   await runAgentMemoryCli(rootDir, ["init", "--yes", "--validate", `--provider=${provider}`], { env });
   if (provider !== "auto") {

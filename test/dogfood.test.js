@@ -6,9 +6,32 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
+let packedPackageSpecPromise;
 
 async function importDogfoodLib() {
   return await import(path.join(REPO_ROOT, "scripts", "dogfood", "lib.mjs"));
+}
+
+async function ensurePackedPackageSpec() {
+  if (!packedPackageSpecPromise) {
+    packedPackageSpecPromise = (async () => {
+      const packDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-pack-"));
+      const result = await runCommand("npm", ["pack", "--pack-destination", packDir], {
+        cwd: REPO_ROOT,
+      });
+      const tarball = result.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .find((line) => line.endsWith(".tgz"));
+      if (!tarball) {
+        throw new Error(`npm pack did not produce a tarball. Output:\n${result.stdout}\n${result.stderr}`);
+      }
+      return path.join(packDir, tarball);
+    })();
+  }
+
+  return await packedPackageSpecPromise;
 }
 
 async function writeExecutable(filePath, content) {
@@ -337,7 +360,7 @@ main().catch((error) => {
 
 async function materializeTempRepo() {
   const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-dogfood-repo-"));
-  const skip = new Set([".git", "node_modules", "temp"]);
+  const skip = new Set([".git", "node_modules", "dist", "temp"]);
 
   for (const entry of await fs.readdir(REPO_ROOT, { withFileTypes: true })) {
     if (skip.has(entry.name)) {
@@ -350,7 +373,6 @@ async function materializeTempRepo() {
     });
   }
 
-  await fs.symlink(path.join(REPO_ROOT, "node_modules"), path.join(repoDir, "node_modules"), "dir");
   await runCommand("git", ["init"], { cwd: repoDir });
   await runCommand("git", ["config", "user.email", "dogfood@test.invalid"], { cwd: repoDir });
   await runCommand("git", ["config", "user.name", "dogfood test"], { cwd: repoDir });
@@ -415,11 +437,12 @@ test("dogfood:init builds a self-host baseline in the repo root clone", { concur
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const repoDir = await materializeTempRepo();
+  const packageSpec = await ensurePackedPackageSpec();
 
   const result = await runDogfood(repoDir, "dogfood:init", {
     AGENT_MEMORY_CODEX_BIN: providers.codexPath,
     AGENT_MEMORY_CLAUDE_BIN: providers.claudePath,
-    AGENT_MEMORY_DOGFOOD_SKIP_BUILD: "1",
+    AGENT_MEMORY_DOGFOOD_PACKAGE_SPEC: packageSpec,
     ...dogfoodTestEnv(repoDir),
   });
   assert.equal(result.code, 0, result.stderr);
@@ -437,10 +460,11 @@ test("dogfood:exercise runs in an isolated worktree and writes the latest report
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const repoDir = await materializeTempRepo();
+  const packageSpec = await ensurePackedPackageSpec();
   const env = {
     AGENT_MEMORY_CODEX_BIN: providers.codexPath,
     AGENT_MEMORY_CLAUDE_BIN: providers.claudePath,
-    AGENT_MEMORY_DOGFOOD_SKIP_BUILD: "1",
+    AGENT_MEMORY_DOGFOOD_PACKAGE_SPEC: packageSpec,
     ...dogfoodTestEnv(repoDir),
   };
 
@@ -463,10 +487,11 @@ test("dogfood:repair fixes managed drift and applies the patch back to the root 
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const repoDir = await materializeTempRepo();
+  const packageSpec = await ensurePackedPackageSpec();
   const env = {
     AGENT_MEMORY_CODEX_BIN: providers.codexPath,
     AGENT_MEMORY_CLAUDE_BIN: providers.claudePath,
-    AGENT_MEMORY_DOGFOOD_SKIP_BUILD: "1",
+    AGENT_MEMORY_DOGFOOD_PACKAGE_SPEC: packageSpec,
     ...dogfoodTestEnv(repoDir),
   };
 
@@ -488,11 +513,12 @@ test("dogfood:repair can enter whole-repo agentic repair and fix source-level br
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const repoDir = await materializeTempRepo();
+  const packageSpec = await ensurePackedPackageSpec();
   const env = {
     AGENT_MEMORY_CODEX_BIN: providers.codexPath,
     AGENT_MEMORY_CLAUDE_BIN: providers.claudePath,
     DOGFOOD_FAKE_REPAIR_MODE: "fix-test-script",
-    AGENT_MEMORY_DOGFOOD_SKIP_BUILD: "1",
+    AGENT_MEMORY_DOGFOOD_PACKAGE_SPEC: packageSpec,
     ...dogfoodTestEnv(repoDir),
   };
 

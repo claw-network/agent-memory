@@ -310,6 +310,7 @@ AGENT_MEMORY_DOGFOOD_PROVIDER=claude npm run dogfood:init
 Current dogfood behavior:
 
 - repo-root `.agent-memory/`, `docs/agent-memory/`, `.mcp.json`, `.claude/`, and `AGENTS.md` form the stable self-host baseline
+- `dogfood:init` installs the published `@agent-connect/memory` package into the temporary repo clone before using `npx agent-memory ...`
 - `exercise` runs in an isolated git worktree under `temp/dogfood/worktree`
 - dogfood now inherits your real `HOME` by default, so Codex and Claude use the same user-level auth/config they would during normal local work
 - tests and other isolated runs can still override `HOME` explicitly when they need a sandbox
