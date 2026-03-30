@@ -220,7 +220,7 @@ async function handleRequest(rootDir: string, request: Record<string, unknown>):
       },
       serverInfo: {
         name: "agent-memory",
-        version: "0.2.1",
+        version: "0.3.0",
       },
     });
   }

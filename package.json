@@ -1,6 +1,6 @@
 {
   "name": "@agent-connect/memory",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Bootstrap durable project memory for developers and coding agents.",
   "license": "MIT",
   "publishConfig": {

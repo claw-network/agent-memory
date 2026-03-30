@@ -2239,8 +2239,9 @@ test("commands and roadmap docs describe grouped unrecalled history summaries", 
   assert.match(readme, /grouped unrecalled history summary/i);
   assert.match(commands, /grouped unrecalled history summary/i);
   assert.match(commands, /grouped summary of unrecalled history/i);
-  assert.match(roadmap, /grouped unrecalled history summaries/i);
-  assert.match(roadmap, /recall input is grouped across local and imported history/i);
+  assert.match(roadmap, /Current Product Surface/i);
+  assert.match(roadmap, /Canonical memory/i);
+  assert.match(roadmap, /Retention and archive management/i);
 });
 
 test("query docs describe natural-language retrieval, json output, and projection links", async () => {
@@ -2256,7 +2257,7 @@ test("query docs describe natural-language retrieval, json output, and projectio
   assert.match(commands, /natural-language/i);
   assert.match(readme, /projection docs|projection doc/i);
   assert.match(commands, /projection docs|projection doc/i);
-  assert.match(roadmap, /natural-language structured questions|natural language structured questions/i);
+  assert.match(roadmap, /natural-language modes, citations, and JSON output/i);
 });
 
 test("automation docs describe the local daemon and aggressive recall behavior", async () => {
@@ -2271,8 +2272,8 @@ test("automation docs describe the local daemon and aggressive recall behavior",
   assert.match(commands, /automate run-once/);
   assert.match(readme, /dirty worktrees do not block automation cycles/i);
   assert.match(commands, /dirty worktrees do not block the cycle/i);
-  assert.match(roadmap, /local built-in automation daemon/i);
-  assert.match(roadmap, /aggressive auto-apply recall/i);
+  assert.match(roadmap, /Automation And Retention Safety/i);
+  assert.match(roadmap, /archive-first pruning/i);
   assert.match(readme, /retention is enabled by default/i);
   assert.match(commands, /archive batches live in `\.agent-memory\/archive\/`/i);
   assert.match(fileModel, /archive-first retention layer/i);
@@ -2308,7 +2309,8 @@ test("integration docs describe integrate, mcp, and ensure-running", async () =>
   assert.match(readme, /--dry-run.*without writing files/i);
   assert.match(commands, /--status.*read-only/i);
   assert.match(readme, /--repair.*managed mismatches/i);
-  assert.match(roadmap, /safe Codex MCP registration via `integrate`/);
+  assert.match(roadmap, /Integration Maturity/i);
+  assert.match(roadmap, /integrate/i);
 });
 
 test("workflow docs describe richer MCP workflow as the current Phase 4 focus", async () => {
@@ -2325,11 +2327,11 @@ test("workflow docs describe richer MCP workflow as the current Phase 4 focus", 
   assert.match(commands, /memory_assess/);
   assert.match(commands, /memory_compact_handoff/);
   assert.match(commands, /memory_maintain/);
-  assert.match(roadmap, /richer MCP workflow/i);
+  assert.match(roadmap, /Workflow-First Experience/i);
   assert.match(roadmap, /memory_assess/);
   assert.match(roadmap, /memory_compact_handoff/);
   assert.match(roadmap, /memory_maintain/);
-  assert.match(roadmap, /policy-controls milestone/i);
+  assert.match(roadmap, /higher-level workflow tools exposed through the MCP surface/i);
   assert.match(fileModel, /archived data/i);
 });
 
@@ -2344,9 +2346,9 @@ test("README and roadmap describe the self-host dogfood workflow", async () => {
   assert.match(readme, /npm run dogfood:repair/);
   assert.match(readme, /isolated git worktree/i);
   assert.match(readme, /inherits your real `HOME` by default/i);
-  assert.match(roadmap, /self-host dogfood milestone/i);
+  assert.match(roadmap, /Dogfood And Repair Loop/i);
   assert.match(roadmap, /dogfood:init\|exercise\|repair\|status/);
-  assert.match(roadmap, /inheriting the operator's real HOME by default/i);
+  assert.match(roadmap, /isolated while preserving realistic operator conditions/i);
 });
 
 test("docs describe add and sync as the official external session commands", async () => {
@@ -2363,7 +2365,8 @@ test("docs describe add and sync as the official external session commands", asy
   assert.match(commands, /## `agent-memory add`/);
   assert.match(commands, /## `agent-memory sync`/);
   assert.doesNotMatch(commands, /## `agent-memory import`/);
-  assert.match(roadmap, /external session ingestion through `add` and `sync`/);
+  assert.match(roadmap, /External history ingestion/);
+  assert.match(roadmap, /`add`, `sync`/);
   assert.match(adoption, /Use `add` and `sync` to ingest external sessions/);
 });
 
@@ -2373,12 +2376,16 @@ test("roadmap documents Phase 3 completion and Phase 4 first-milestone completio
     fs.readFile(path.join(REPO_ROOT, "docs", "overview.md"), "utf8"),
   ]);
 
-  assert.match(roadmap, /## Phase 3 Status/);
-  assert.match(roadmap, /Phase 3 is complete:/);
-  assert.match(roadmap, /## Phase 4 Status/);
-  assert.match(roadmap, /Phase 4 has started and its first milestone is complete:/);
-  assert.match(roadmap, /`query` supports agent-facing JSON output via `--output=json`/);
-  assert.match(roadmap, /`agent-memory mcp` exposes retrieval, health, and automation control tools/);
+  assert.match(roadmap, /Current Product Surface/);
+  assert.match(roadmap, /natural-language modes, citations, and JSON output/i);
+  assert.match(roadmap, /automate start\|stop\|status\|run-once\|ensure-running/);
+  assert.match(roadmap, /integrate.*Claude Code and Codex/);
+  assert.match(roadmap, /MCP access/);
+  assert.match(roadmap, /Next Major Goals/);
+  assert.match(overview, /- `status`/);
+  assert.match(overview, /- `query`/);
+  assert.match(overview, /- `add`/);
+  assert.match(overview, /- `sync`/);
   assert.match(overview, /- `automate`/);
   assert.match(overview, /- `integrate`/);
   assert.match(overview, /- `mcp`/);
