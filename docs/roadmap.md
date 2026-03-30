@@ -1,177 +1,130 @@
-# V1 Boundary And Roadmap
+# Product Roadmap
 
-This page defines what the current `agent-memory` v1 is responsible for, what is intentionally out of scope, and what the next steps should be.
+This page reflects the current reality of `agent-memory`, not the historical sequence that got the project here.
 
-## V1 Boundary
+The project is no longer just a repository memory bootstrapper. It is now a broader memory platform with durable state, retrieval, automation, integration, retention, and self-host dogfooding capabilities.
 
-Current v1 includes:
+## Current Product Surface
 
-- destructive bootstrap into the current schema through `init`
-- canonical state in `/.agent-memory/state.json`
-- append-only history in `/.agent-memory/history/events.jsonl`
-- bundle checkpoints in `/.agent-memory/history/checkpoints/`
-- external source registry in `/.agent-memory/sources.json`
-- active bundle refresh through `update`
-- manual history consolidation through `recall`
-- cited retrieval through `query`
-- external session ingestion through `add` and `sync`
-- system health auditing through `validate`
-- built-in source adapters for `claude-local` and `codex-local`
-- readable projections in `docs/agent-memory/`
+Today `agent-memory` includes these product areas:
 
-In practical terms, v1 establishes the full loop:
+- Canonical memory
+  `init`, `update`, `recall`, `status`, `validate`
+- Retrieval
+  `query` with natural-language modes, citations, and JSON output
+- External history ingestion
+  `add`, `sync`
+- Local automation
+  `automate start|stop|status|run-once|ensure-running`
+- Client integration
+  `integrate` for Claude Code and Codex
+- MCP access
+  `mcp`
+- Retention and archive management
+  archive-first pruning under `.agent-memory/archive/`
+- Workflow layer
+  higher-level workflow tools exposed through the MCP surface
+- Self-host dogfood tooling
+  `npm run dogfood:init|exercise|repair|status`
 
-1. capture repository state
-2. ingest additional history
-3. consolidate it back into active memory
-4. retrieve it later with citations
-5. audit drift and backlog
+## What Is Already Complete
 
-## Explicitly Out Of Scope For V1
+These foundations are established in the current codebase:
 
-V1 intentionally does not include:
+- Durable repository memory with canonical state, history, checkpoints, sources, and config
+- Section-aware recall with policy controls and conservative deduplication
+- Query retrieval across bundle, history, and checkpoints with citations and evidence-insufficient handling
+- Status inspection with backlog, source health, checkpoint drift, and suggested next action
+- Retention and archive-first pruning integrated into the automation path
+- Local automation daemon for sync + recall maintenance
+- Claude Code and Codex integration surfaces
+- MCP tools and higher-level workflow entrypoints
+- Self-host dogfood loops for exercising and repairing the project against itself
 
-- migration from older `agent-memory` schemas or markers
-- background or scheduled recall runs
-- automatic consolidation during `update` or `sync`
-- embeddings, vector search, or external databases
-- manual editing workflows for history events or checkpoints
-- source adapters beyond the built-in local Claude/Codex importers
-- policy engines for retention, pruning windows, or per-project automation rules
-- conflict-aware merge tooling for partially applying recall output
-- a UI layer beyond CLI output and generated markdown
+## Current Strategic Focus
 
-These exclusions are intentional. V1 is the first complete memory lifecycle, not the final form of the product.
+The project has moved beyond the original Phase 1/2/3 framing. The meaningful frontier is now inside the broader platform.
 
-## V1 Quality Bar
+The current focus areas are:
 
-V1 should be considered healthy when these conditions hold:
+- make the workflow layer the default operator experience
+- improve integration reliability for Claude Code and Codex
+- deepen automation and retention safety
+- expand the dogfood loop so the project can prove its own value continuously
+- keep the active memory surface small while the platform around it grows
 
-- `init`, `update`, `recall`, `query`, `add`, `sync`, and `validate` all work end-to-end
-- history stays append-only and checkpoints remain readable
-- `recall` can remove stale next steps, merge repeated gotchas, and compress noisy current focus output
-- `query` can answer from bundle, history, and checkpoints with usable citations
-- `validate` can detect broken state, broken history, missing checkpoints, invalid sources, and recall backlog
-- destructive rebuild semantics are documented clearly enough that users do not expect migration
+## Next Major Goals
 
-## Roadmap
+### 1. Workflow-First Experience
 
-### Phase 1: Stabilize V1
+Shift the product center of gravity from low-level commands to high-level workflows.
 
-Focus on reliability and operator confidence:
+Near-term goals:
 
-- harden importer parsing against more real-world Claude/Codex session formats
-- improve recall diff readability and reduce noisy preview output
-- improve query answer quality and citation precision
-- tighten validation findings and make warning/fail boundaries more predictable
-- expand docs with more concrete examples and troubleshooting
+- strengthen workflow tools such as `memory_assess`, `memory_compact_handoff`, and `memory_maintain`
+- make workflow outputs easier to trust and act on than raw command output
+- keep low-level commands available, but treat them as expert-mode tools
 
-### Phase 2: Better Memory Maintenance
+### 2. Integration Maturity
 
-Focus on making recall smarter and easier to use:
+Turn integration from “available” into “boring and reliable.”
 
-- section-aware recall, so users can consolidate only gotchas or next steps
-- stronger duplicate detection across imported and local history
-- checkpoint comparison and recall summaries that explain why a change was made
-- optional recall policies such as “imports only” presets or project-level defaults
-- better backlog visibility, including commands that summarize unrecalled history before apply
+Near-term goals:
 
-### Phase 3: Better Retrieval
+- reduce mismatch states between managed integration assets and real project state
+- improve repair flows for partially broken Claude/Codex integration
+- tighten status/read-only inspection so operators can understand integration health without trial-and-error
 
-Focus on making `query` a stronger day-to-day tool:
+### 3. Automation And Retention Safety
 
-- staged rollout across retrieval core, natural-language structured queries, and agent-facing outputs
-- richer shortlist ranking across bundle, events, and checkpoints
-- natural-language structured questions such as “what changed”, “what should I do next”, and “what are the known traps”
-- project-specific retrieval prompts and templates under `.agent-memory/config.json`
-- better cross-linking between citations and generated projection files
-- optional query outputs for agents, such as `--output=json`
+Automation now exists; the next step is making it resilient and predictable.
 
-### Phase 4: Automation And Ecosystem
+Near-term goals:
 
-Focus on reducing maintenance overhead:
+- improve daemon observability and run diagnostics
+- harden archive-first pruning and archive expiry behavior
+- ensure active query/recall/status semantics stay clean even as archives grow
+- refine when aggressive auto-apply recall is acceptable versus risky
 
-- first milestone: local built-in automation daemon with `automate start|stop|status|run-once`
-- integration milestone: Claude Code project files plus safe Codex MCP registration via `integrate`
-- project-level automation settings under `.agent-memory/config.json`
-- aggressive auto-apply recall for structurally healthy repos, even with dirty worktrees
-- broader importer ecosystem beyond Claude/Codex local history
-- export or report surfaces for CI, dashboards, or external knowledge systems
-- higher-level memory policies such as retention windows or source trust weighting
+### 4. Broader Importer Coverage
+
+Current importer support is intentionally narrow and local-first.
+
+Near-term goals:
+
+- support more real-world Claude/Codex local history layouts
+- improve partial-failure handling and diagnostics
+- expand beyond current built-ins only when reliability and operator clarity are preserved
+
+### 5. Dogfood And Repair Loop
+
+The dogfood layer is now a strategic asset, not just internal tooling.
+
+Near-term goals:
+
+- make the self-host exercise loop a stronger regression detector
+- improve deterministic repair before escalating to provider-driven repair
+- keep the dogfood worktree isolated while preserving realistic operator conditions
+
+## Longer-Horizon Opportunities
+
+These are intentionally not immediate commitments, but they are plausible extensions of the current platform:
+
+- richer exporter/report surfaces for CI and dashboards
+- stronger policy controls for automation and retention
+- broader importer ecosystem
+- deeper MCP workflow composition
+- more agent-oriented output modes and structured handoff surfaces
 
 ## Product Principle
 
-The core principle for the next phase is simple:
+The platform should continue to optimize for this balance:
 
-- keep canonical state small
-- keep history durable
-- make consolidation deliberate
+- keep active canonical memory small
+- keep historical evidence durable
 - make retrieval explainable
+- make maintenance deliberate
+- make automation observable
+- make integrations safe by default
 
-That is the line between “generated docs” and a real repository memory system.
-
-## Phase 1 Status
-
-Phase 1 exit criteria are currently met in the implementation baseline:
-
-- importer coverage includes static redacted Claude/Codex fixture snapshots
-- recall supports no-op exits and summary-first previews
-- query supports evidence-insufficient responses and stable citations
-- validate distinguishes structural failures from maintenance warnings
-
-Future work should now treat Phase 1 as the stabilization baseline and move incrementally into Phase 2.
-
-## Phase 2 Status
-
-Phase 2 is complete:
-
-- recall supports section-aware consolidation across the full bundle
-- recall input is grouped across local and imported history before consolidation, and conservative deduplication is still applied before state write
-- checkpoint comparison powers summary-first recall previews
-- `status` provides backlog counts, grouped unrecalled history summaries, source health, checkpoint drift, and suggested next action
-- `config.json` provides project-level recall defaults and policy controls
-
-Future work should now treat Phase 2 as complete and move into Phase 3.
-
-## Phase 3 Status
-
-Phase 3 is complete:
-
-- `query` uses richer shortlist ranking across bundle, events, and checkpoints
-- natural-language structured questions are routed into changes, next, traps, and general answer modes
-- project-specific retrieval templates are available under `.agent-memory/config.json`
-- bundle citations are cross-linked to generated projection files when applicable
-- `query` supports agent-facing JSON output via `--output=json`
-
-Future work should now treat Phase 3 as complete and move into Phase 4.
-
-## Phase 4 Status
-
-Phase 4 has started and its first milestone is complete:
-
-- local automation daemon commands are available through `automate start|stop|status|run-once|ensure-running`
-- automation runtime state and latest-run reports are written under `.agent-memory/automation/`
-- aggressive auto-apply recall is supported for structurally healthy repositories
-- Claude Code and Codex integration is available through `integrate`, with project-level Claude assets and safe global Codex MCP registration
-- `agent-memory mcp` exposes retrieval, health, and automation control tools for chat-client integrations
-
-Current richer MCP workflow focus inside Phase 4:
-
-- add higher-level workflow tools such as `memory_assess`, `memory_compact_handoff`, and `memory_maintain`
-- make Claude Code skills and Codex `AGENTS.md` guidance prefer workflow-first MCP usage
-- keep lower-level retrieval and automation tools available for finer control
-
-Future work should continue within Phase 4 on broader importer coverage, report/export surfaces, higher-level policy controls, and richer MCP workflow depth.
-
-Current policy-controls milestone inside Phase 4:
-
-- retention and pruning are now part of the automation path
-- pruning is archive-first under `.agent-memory/archive/`, with later archive expiry
-- active `query`, `recall`, and `status` continue to operate only on the active state/history/checkpoint layers
-
-Current self-host dogfood milestone inside Phase 4:
-
-- the repository can now use itself as a dogfood arena through `npm run dogfood:init|exercise|repair|status`
-- stable repo-root memory and integration assets can be maintained as the committed dogfood baseline
-- exercise runs in an isolated git worktree while inheriting the operator's real HOME by default
-- repair can first perform deterministic maintenance fixes, then escalate to whole-repo provider-driven repair before applying a patch back to the root worktree
+That is the line between “a memory bootstrap tool” and “a trustworthy memory operating system for coding workflows.”
