@@ -2,6 +2,9 @@
 
 Use the `agent-memory` MCP tools selectively for repository memory tasks.
 
+Default integration uses stdio via `npx agent-memory mcp`.
+Optional HTTP transport is available for debugging or custom clients via `npx agent-memory mcp --transport=http --port=<port>`.
+
 Prefer the high-level workflow tools first:
 
 Call `memory_assess` when:

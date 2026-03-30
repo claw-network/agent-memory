@@ -1,7 +1,7 @@
 import { runMcpServer as runMcpServerCore } from "../core/mcp-server";
-import type { AutomationCommandOptions } from "../types";
+import type { McpCommandOptions } from "../types";
 
-export async function runMcpServer(options: AutomationCommandOptions): Promise<number> {
-  await runMcpServerCore(options.cwd);
+export async function runMcpServer(options: McpCommandOptions): Promise<number> {
+  await runMcpServerCore(options);
   return 0;
 }

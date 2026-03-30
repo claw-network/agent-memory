@@ -272,15 +272,22 @@ The generated Claude skill and Codex guidance now prefer the higher-level MCP wo
 
 ```bash
 npx agent-memory mcp
+npx agent-memory mcp --transport=http --port=8765
 ```
 
-This starts the local stdio MCP server used by Claude Code and Codex integrations.
+This starts the local MCP server used by Claude Code and Codex integrations.
+
+- stdio remains the default and is what `integrate` writes into `.mcp.json`
+- optional HTTP transport is available with `--transport=http --port=<port>`
+- HTTP mode also supports `--host` and `--allowed-hosts`
 
 The MCP server exposes:
 
 - high-level workflow tools: `memory_assess`, `memory_compact_handoff`, `memory_maintain`
 - lower-level retrieval and health tools: `memory_query`, `memory_status`, `memory_validate`
 - automation controls: `automation_status`, `automation_ensure_running`, `automation_run_once`
+
+Tool calls now return human-readable text content plus versioned `structuredContent` envelopes for MCP clients, and long-running tools emit progress notifications.
 
 ### Ensure automation is running
 

@@ -57,6 +57,7 @@ test("mergeAgentsMd inserts or updates only the managed agent-memory block", () 
   assert.match(once, /agent-memory:codex-integration start/);
   assert.match(once, /memory_assess/);
   assert.match(once, /memory_compact_handoff/);
+  assert.match(once, /transport=http/);
   const twice = mergeAgentsMd(once);
   assert.equal(twice, once);
 });
@@ -67,6 +68,7 @@ test("buildClaudeSkillContent prefers the higher-level workflow tools", () => {
   assert.match(skill, /memory_compact_handoff/);
   assert.match(skill, /memory_maintain/);
   assert.match(skill, /memory_query/);
+  assert.match(skill, /transport=http/);
 });
 
 test("mergeCodexConfigToml updates only the agent-memory MCP block", () => {

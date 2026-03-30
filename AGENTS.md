@@ -3,6 +3,9 @@
 
 This repository is integrated with the `agent-memory` MCP server.
 
+Default integration uses stdio via `npx agent-memory mcp`.
+Optional HTTP transport is available for debugging or custom clients via `agent-memory mcp --transport=http --port=<port>`.
+
 Prefer `agent-memory` tools when the task is about:
 - project structure or current focus
 - recent changes

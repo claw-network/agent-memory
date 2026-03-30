@@ -20,6 +20,7 @@ import { runUpdate } from "./commands/update";
 import { runValidate } from "./commands/validate";
 import type {
   IntegrationTarget,
+  McpTransportMode,
   ProviderPreference,
   QueryOutputFormat,
   QueryScope,
@@ -45,7 +46,7 @@ function printHelp(): void {
   console.log("  agent-memory add <type> <path> [--name <id>]");
   console.log("  agent-memory sync [<id>|--all] [--provider=auto|codex|claude]");
   console.log("  agent-memory integrate [claude|codex|all] [--dry-run] [--status] [--repair] [--output=text|json]");
-  console.log("  agent-memory mcp");
+  console.log("  agent-memory mcp [--transport=stdio|http] [--host <host>] [--port <port>] [--allowed-hosts <host1,host2>]");
   console.log("  agent-memory automate start|stop|status|run-once|ensure-running");
   console.log("  agent-memory status [--checkpoint <id>] [--show-diff]");
   console.log("  agent-memory validate");
@@ -58,7 +59,7 @@ function printHelp(): void {
   console.log("  add       Add external session sources.");
   console.log("  sync      Sync external session sources into history events.");
   console.log("  integrate Write Claude Code and Codex integration files.");
-  console.log("  mcp       Start the local MCP stdio server.");
+  console.log("  mcp       Start the local MCP server (stdio by default, optional HTTP transport).");
   console.log("  automate  Run local automation daemon commands for import-sync and recall maintenance.");
   console.log("  status    Show backlog, source health, and checkpoint drift before running recall.");
   console.log("  validate  Audit canonical state, history, checkpoints, projections, and recall health.");
@@ -126,6 +127,30 @@ function parseIntegrationTarget(value: string): IntegrationTarget {
   }
 
   throw new Error(`Unknown integration target: ${value}`);
+}
+
+function parseMcpTransport(value: string): McpTransportMode {
+  if (value === "stdio" || value === "http") {
+    return value;
+  }
+
+  throw new Error(`Unknown MCP transport: ${value}`);
+}
+
+function parsePort(value: string): number {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`Invalid port: ${value}`);
+  }
+
+  return port;
+}
+
+function parseAllowedHosts(value: string): string[] {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
 
 function parseCommonFlags(argv: string[]): { rest: string[]; common: CommonArgs } {
@@ -526,7 +551,88 @@ async function main(): Promise<void> {
       return;
     }
     case "mcp": {
-      const code = await runMcpServer({ cwd: cwd() });
+      const remaining = [...restArgs];
+      let transport: McpTransportMode = "stdio";
+      let host: string | null = null;
+      let port: number | null = null;
+      let allowedHosts: string[] = [];
+
+      while (remaining.length > 0) {
+        const value = remaining.shift();
+        if (!value) {
+          continue;
+        }
+
+        if (value.startsWith("--transport=")) {
+          transport = parseMcpTransport(value.slice("--transport=".length));
+          continue;
+        }
+
+        if (value === "--transport") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --transport");
+          }
+          transport = parseMcpTransport(next);
+          continue;
+        }
+
+        if (value.startsWith("--host=")) {
+          host = value.slice("--host=".length);
+          continue;
+        }
+
+        if (value === "--host") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --host");
+          }
+          host = next;
+          continue;
+        }
+
+        if (value.startsWith("--port=")) {
+          port = parsePort(value.slice("--port=".length));
+          continue;
+        }
+
+        if (value === "--port") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --port");
+          }
+          port = parsePort(next);
+          continue;
+        }
+
+        if (value.startsWith("--allowed-hosts=")) {
+          allowedHosts = parseAllowedHosts(value.slice("--allowed-hosts=".length));
+          continue;
+        }
+
+        if (value === "--allowed-hosts") {
+          const next = remaining.shift();
+          if (!next) {
+            throw new Error("Missing value for --allowed-hosts");
+          }
+          allowedHosts = parseAllowedHosts(next);
+          continue;
+        }
+
+        throw new Error(`Unknown argument: ${value}`);
+      }
+
+      if (transport === "stdio" && (host !== null || port !== null || allowedHosts.length > 0)) {
+        throw new Error("The --host, --port, and --allowed-hosts flags are only supported with --transport=http.");
+      }
+
+      const code = await runMcpServer({
+        cwd: cwd(),
+        transport,
+        host,
+        port,
+        allowedHosts,
+      });
       if (code !== 0) {
         exit(code);
       }

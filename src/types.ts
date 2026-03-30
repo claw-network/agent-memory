@@ -11,6 +11,7 @@ export type RecallSourceScope = "all" | "local" | "imports";
 export type QueryScope = "state" | "history" | "all";
 export type QueryMode = "answer" | "changes" | "next" | "traps";
 export type QueryOutputFormat = "text" | "json";
+export type McpTransportMode = "stdio" | "http";
 export type CitationSourceType = "bundle" | "event" | "checkpoint";
 export type SourceSyncStatus = "never" | "passed" | "failed";
 export type AutomationRunStatus = "idle" | "imported" | "recalled" | "recalled_noop" | "failed";
@@ -305,6 +306,14 @@ export interface QueryOptions {
 
 export interface AutomationCommandOptions {
   cwd: string;
+}
+
+export interface McpCommandOptions {
+  cwd: string;
+  transport: McpTransportMode;
+  host: string | null;
+  port: number | null;
+  allowedHosts: string[];
 }
 
 export interface IntegrateCommandOptions {

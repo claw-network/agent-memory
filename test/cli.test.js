@@ -1,9 +1,15 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const http = require("node:http");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { pathToFileURL } = require("node:url");
+const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
+const { StdioClientTransport } = require("@modelcontextprotocol/sdk/client/stdio.js");
+const { StreamableHTTPClientTransport } = require("@modelcontextprotocol/sdk/client/streamableHttp.js");
+const { ListRootsRequestSchema, ProgressNotificationSchema } = require("@modelcontextprotocol/sdk/types.js");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const CLI_PATH = path.join(REPO_ROOT, "dist", "cli.js");
@@ -453,6 +459,89 @@ async function runCli(projectDir, args, extraEnv = {}) {
       resolve({ code, stdout, stderr });
     });
   });
+}
+
+async function connectSdkClient(transport, roots = null) {
+  const client = new Client(
+    { name: "agent-memory-test-client", version: "1.0.0" },
+    {
+      capabilities: roots ? { roots: { listChanged: false } } : {},
+    },
+  );
+
+  if (roots) {
+    client.setRequestHandler(ListRootsRequestSchema, async () => ({
+      roots: roots.map((root) => ({ uri: pathToFileURL(root).href })),
+    }));
+  }
+
+  await client.connect(transport);
+  return client;
+}
+
+async function startSdkMcpClient(projectDir, extraEnv = {}, options = {}) {
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [CLI_PATH, "mcp", ...(options.args ?? [])],
+    cwd: projectDir,
+    env: {
+      ...process.env,
+      ...extraEnv,
+    },
+    stderr: "pipe",
+  });
+  const client = await connectSdkClient(transport, options.roots ?? null);
+
+  return {
+    client,
+    transport,
+    async close() {
+      await client.close().catch(() => undefined);
+      await transport.close().catch(() => undefined);
+    },
+  };
+}
+
+async function startHttpMcpServer(projectDir, extraEnv = {}, args = []) {
+  const child = spawn(process.execPath, [CLI_PATH, "mcp", "--transport=http", "--port=0", ...args], {
+    cwd: projectDir,
+    env: {
+      ...process.env,
+      ...extraEnv,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  let stderr = "";
+  const baseUrl = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Timed out waiting for HTTP MCP server to start.")), 5000);
+
+    child.stderr.on("data", (chunk) => {
+      stderr += String(chunk);
+      const match = stderr.match(/Listening on (\S+)/);
+      if (!match) {
+        return;
+      }
+
+      clearTimeout(timer);
+      resolve(new URL(match[1]));
+    });
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      reject(new Error(`HTTP MCP server exited early with code ${code}`));
+    });
+  });
+
+  return {
+    child,
+    baseUrl,
+    mcpUrl: new URL("/mcp", baseUrl),
+    async close() {
+      child.kill("SIGTERM");
+      await new Promise((resolve) => child.on("close", resolve));
+    },
+  };
 }
 
 async function startMcpSession(projectDir, extraEnv = {}) {
@@ -1958,59 +2047,247 @@ test("integrate status reports managed_mismatch and recover after re-run", async
   assert.doesNotMatch(after.stdout, /managed_mismatch/);
 });
 
-test("agent-memory mcp supports initialize, tools/list, and tool calls", async () => {
+test("agent-memory mcp exposes SDK-backed tools, annotations, and structured results over stdio", async () => {
   const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
   const providers = await createFakeProviderBinaries(providerDir);
   const projectDir = await createFixtureProject();
 
   assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
-  const session = await startMcpSession(projectDir, providerEnv(providers));
+  const session = await startSdkMcpClient(projectDir, providerEnv(providers));
 
   try {
-    const initResult = await session.request("initialize", {});
-    assert.equal(initResult.result.serverInfo.name, "agent-memory");
+    const toolsResult = await session.client.listTools();
+    assert.ok(Array.isArray(toolsResult.tools));
+    assert.ok(toolsResult.tools.some((tool) => tool.name === "memory_assess"));
+    assert.ok(toolsResult.tools.some((tool) => tool.name === "memory_maintain"));
+    assert.ok(toolsResult.tools.some((tool) => tool.name === "memory_compact_handoff"));
+    assert.ok(toolsResult.tools.some((tool) => tool.name === "memory_query"));
+    assert.ok(toolsResult.tools.some((tool) => tool.name === "automation_ensure_running"));
 
-    await session.notify("notifications/initialized", {});
+    const assessTool = toolsResult.tools.find((tool) => tool.name === "memory_assess");
+    assert.equal(assessTool.annotations.readOnlyHint, true);
+    assert.equal(assessTool.annotations.destructiveHint, false);
 
-    const toolsResult = await session.request("tools/list", {});
-    assert.ok(Array.isArray(toolsResult.result.tools));
-    assert.ok(toolsResult.result.tools.some((tool) => tool.name === "memory_assess"));
-    assert.ok(toolsResult.result.tools.some((tool) => tool.name === "memory_maintain"));
-    assert.ok(toolsResult.result.tools.some((tool) => tool.name === "memory_compact_handoff"));
-    assert.ok(toolsResult.result.tools.some((tool) => tool.name === "memory_query"));
-    assert.ok(toolsResult.result.tools.some((tool) => tool.name === "automation_ensure_running"));
-
-    const assessCall = await session.request("tools/call", {
+    const assessCall = await session.client.callTool({
       name: "memory_assess",
       arguments: {},
     });
-    assert.equal(assessCall.result.content[0].type, "text");
-    assert.match(assessCall.result.content[0].text, /Status:/);
-    assert.ok(["healthy", "attention", "unhealthy"].includes(assessCall.result.structuredContent.details.memoryHealth));
-    assert.equal(typeof assessCall.result.structuredContent.details.backlog.unrecalledAll, "number");
-    assert.equal(typeof assessCall.result.structuredContent.details.retention.enabled, "boolean");
+    assert.equal(assessCall.content[0].type, "text");
+    assert.match(assessCall.content[0].text, /Status:/);
+    assert.equal(assessCall.structuredContent.tool, "memory_assess");
+    assert.equal(assessCall.structuredContent.schemaVersion, 1);
+    assert.ok(["healthy", "attention", "unhealthy"].includes(assessCall.structuredContent.data.details.memoryHealth));
+    assert.equal(typeof assessCall.structuredContent.data.details.backlog.unrecalledAll, "number");
+    assert.equal(typeof assessCall.structuredContent.data.details.retention.enabled, "boolean");
 
-    const handoffCall = await session.request("tools/call", {
+    const handoffCall = await session.client.callTool({
       name: "memory_compact_handoff",
       arguments: {},
     });
-    assert.equal(handoffCall.result.content[0].type, "text");
-    assert.match(handoffCall.result.content[0].text, /Suggested Next Action:/);
-    assert.ok(Array.isArray(handoffCall.result.structuredContent.details.topGotchas));
-    assert.equal(typeof handoffCall.result.structuredContent.details.retentionSummary, "string");
+    assert.equal(handoffCall.content[0].type, "text");
+    assert.match(handoffCall.content[0].text, /Suggested Next Action:/);
+    assert.equal(handoffCall.structuredContent.tool, "memory_compact_handoff");
+    assert.ok(Array.isArray(handoffCall.structuredContent.data.details.topGotchas));
+    assert.equal(typeof handoffCall.structuredContent.data.details.retentionSummary, "string");
 
-    const maintainCall = await session.request("tools/call", {
+    const maintainCall = await session.client.callTool({
       name: "memory_maintain",
       arguments: {},
     });
-    assert.equal(maintainCall.result.content[0].type, "text");
-    assert.ok(["ok", "warn", "fail"].includes(maintainCall.result.structuredContent.status));
-    assert.equal(typeof maintainCall.result.structuredContent.details.daemon.startedNow, "boolean");
-    assert.equal(typeof maintainCall.result.structuredContent.details.prune.attempted, "boolean");
-    assert.match(maintainCall.result.structuredContent.details.latestRunPath, /latest-run\.json$/);
+    assert.equal(maintainCall.content[0].type, "text");
+    assert.equal(maintainCall.structuredContent.tool, "memory_maintain");
+    assert.ok(["ok", "warn", "fail"].includes(maintainCall.structuredContent.data.status));
+    assert.equal(typeof maintainCall.structuredContent.data.details.daemon.startedNow, "boolean");
+    assert.equal(typeof maintainCall.structuredContent.data.details.prune.attempted, "boolean");
+    assert.match(maintainCall.structuredContent.data.details.latestRunPath, /latest-run\.json$/);
   } finally {
     await runCli(projectDir, ["automate", "stop"], providerEnv(providers)).catch(() => undefined);
     await session.close();
+  }
+});
+
+test("agent-memory mcp exposes query, status, and validate contracts with versioned structured content", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const session = await startSdkMcpClient(projectDir, providerEnv(providers));
+
+  try {
+    const queryCall = await session.client.callTool({
+      name: "memory_query",
+      arguments: {
+        question: "what should I do next?",
+      },
+    });
+    assert.equal(queryCall.structuredContent.tool, "memory_query");
+    assert.equal(queryCall.structuredContent.schemaVersion, 1);
+    assert.equal(typeof queryCall.structuredContent.data.answer, "string");
+    assert.match(queryCall.content[0].text, /Answer:/);
+
+    const statusCall = await session.client.callTool({
+      name: "memory_status",
+      arguments: {},
+    });
+    assert.equal(statusCall.structuredContent.tool, "memory_status");
+    assert.equal(typeof statusCall.structuredContent.data.history.unrecalledAll, "number");
+    assert.match(statusCall.content[0].text, /Latest checkpoint:/);
+
+    const validateCall = await session.client.callTool({
+      name: "memory_validate",
+      arguments: {},
+    });
+    assert.equal(validateCall.structuredContent.tool, "memory_validate");
+    assert.ok(Array.isArray(validateCall.structuredContent.data));
+    assert.equal(validateCall.isError, undefined);
+    assert.match(validateCall.content[0].text, /Summary:/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("agent-memory mcp prefers client roots over the process cwd", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const alternateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-empty-root-"));
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const session = await startSdkMcpClient(projectDir, providerEnv(providers), { roots: [alternateRoot] });
+
+  try {
+    const validateCall = await session.client.callTool({
+      name: "memory_validate",
+      arguments: {},
+    });
+    assert.equal(validateCall.structuredContent.tool, "memory_validate");
+    assert.ok(validateCall.structuredContent.data.some((finding) => finding.code === "state:missing"));
+  } finally {
+    await session.close();
+  }
+});
+
+test("agent-memory mcp sends progress notifications for long-running tools", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const session = await startSdkMcpClient(projectDir, providerEnv(providers));
+  const progressMessages = [];
+
+  try {
+    session.client.setNotificationHandler(ProgressNotificationSchema, (notification) => {
+      progressMessages.push(notification.params.message);
+    });
+
+    await session.client.callTool({
+      name: "memory_validate",
+      arguments: {},
+      _meta: {
+        progressToken: "validate-progress",
+      },
+    });
+
+    assert.deepEqual(progressMessages, ["Loading state", "Running workflow", "Summarizing result"]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("agent-memory mcp supports HTTP transport with SDK clients", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const server = await startHttpMcpServer(projectDir, providerEnv(providers));
+  const transport = new StreamableHTTPClientTransport(server.mcpUrl);
+  const client = await connectSdkClient(transport);
+
+  try {
+    const tools = await client.listTools();
+    assert.ok(tools.tools.some((tool) => tool.name === "memory_assess"));
+
+    const validateCall = await client.callTool({
+      name: "memory_validate",
+      arguments: {},
+    });
+    assert.equal(validateCall.structuredContent.tool, "memory_validate");
+    assert.ok(Array.isArray(validateCall.structuredContent.data));
+  } finally {
+    await client.close().catch(() => undefined);
+    await transport.close().catch(() => undefined);
+    await server.close();
+  }
+});
+
+test("agent-memory mcp HTTP transport rejects disallowed hosts", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const server = await startHttpMcpServer(projectDir, providerEnv(providers));
+
+  try {
+    const response = await new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: server.baseUrl.hostname,
+        port: server.baseUrl.port,
+        path: "/mcp",
+        method: "GET",
+        headers: {
+          Host: "evil.example",
+        },
+      }, (res) => {
+        let body = "";
+        res.on("data", (chunk) => {
+          body += String(chunk);
+        });
+        res.on("end", () => {
+          resolve({ statusCode: res.statusCode, body });
+        });
+      });
+      req.on("error", reject);
+      req.end();
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.match(response.body, /Access is only allowed/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("agent-memory mcp HTTP transport keeps session roots isolated across clients", async () => {
+  const providerDir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-"));
+  const providers = await createFakeProviderBinaries(providerDir);
+  const projectDir = await createFixtureProject();
+  const alternateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-empty-root-"));
+
+  assert.equal((await runCli(projectDir, ["init", "--yes", "--provider=codex"], providerEnv(providers))).code, 0);
+  const server = await startHttpMcpServer(projectDir, providerEnv(providers));
+  const transportA = new StreamableHTTPClientTransport(server.mcpUrl);
+  const transportB = new StreamableHTTPClientTransport(server.mcpUrl);
+  const clientA = await connectSdkClient(transportA);
+  const clientB = await connectSdkClient(transportB, [alternateRoot]);
+
+  try {
+    const [validateA, validateB] = await Promise.all([
+      clientA.callTool({ name: "memory_validate", arguments: {} }),
+      clientB.callTool({ name: "memory_validate", arguments: {} }),
+    ]);
+
+    assert.equal(validateA.structuredContent.data.some((finding) => finding.code === "state:missing"), false);
+    assert.equal(validateB.structuredContent.data.some((finding) => finding.code === "state:missing"), true);
+  } finally {
+    await clientA.close().catch(() => undefined);
+    await clientB.close().catch(() => undefined);
+    await transportA.close().catch(() => undefined);
+    await transportB.close().catch(() => undefined);
+    await server.close();
   }
 });
 
@@ -2303,6 +2580,8 @@ test("integration docs describe integrate, mcp, and ensure-running", async () =>
   assert.match(commands, /integrate --dry-run/);
   assert.match(commands, /integrate --status --output=json/);
   assert.match(commands, /integrate --repair/);
+  assert.match(readme, /transport=http/);
+  assert.match(commands, /transport=http/);
   assert.match(commands, /memory_assess/);
   assert.match(commands, /memory_compact_handoff/);
   assert.match(commands, /memory_maintain/);

@@ -286,9 +286,14 @@ Generated or updated files:
 
 ```bash
 npx agent-memory mcp
+npx agent-memory mcp --transport=http --port=8765
 ```
 
-Starts the local stdio MCP server for chat-client integrations.
+Starts the local MCP server for chat-client integrations.
+
+- stdio is the default transport
+- HTTP transport is available with `--transport=http --port=<port>`
+- HTTP mode also supports `--host` and `--allowed-hosts`
 
 Primary workflow tools:
 
@@ -307,6 +312,9 @@ Lower-level tools remain available for finer control:
 - `automation_status`
 - `automation_ensure_running`
 - `automation_run_once`
+
+Tool calls return human-readable text content plus versioned `structuredContent` envelopes.
+Long-running tools such as `memory_maintain`, `memory_query`, and `memory_validate` also emit progress notifications when the client supplies a progress token.
 
 ## `agent-memory status`
 

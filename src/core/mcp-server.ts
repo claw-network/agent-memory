@@ -1,327 +1,357 @@
-import { stdin, stdout } from "node:process";
-import { getAutomationStatus, ensureAutomationDaemonRunning, runAutomationCycle } from "./automation-orchestrator";
-import { buildStatusReport } from "./status-orchestrator";
-import { runQuery as runQueryOrchestrator } from "./query-orchestrator";
-import { validateMemory } from "./validate-memory";
-import { readLatestCheckpoint } from "./history-store";
+import { randomUUID } from "node:crypto";
+import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import type { ProgressNotification, Tool } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { ZodError, z } from "zod";
+import type { McpCommandOptions } from "../types";
+import { GENERATOR_VERSION } from "./constants";
+import { McpSessionBackend } from "./mcp-backend";
 import {
-  buildMemoryAssessWorkflow,
-  buildMemoryCompactHandoffWorkflow,
-  runMemoryMaintainWorkflow,
-} from "./workflow-orchestrator";
+  buildErrorResult,
+  buildSuccessResult,
+  formatJsonResult,
+  toolAnnotations,
+} from "./mcp-contract";
+import { getMcpToolRegistry } from "./mcp-tools";
 
-interface ToolDefinition {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  invoke: (rootDir: string, argumentsValue: Record<string, unknown>) => Promise<unknown>;
+const MCP_HTTP_PATH = "/mcp";
+const MCP_SERVER_INSTRUCTIONS = [
+  "Prefer memory_assess at repository entry.",
+  "Use memory_compact_handoff before compact or handoff.",
+  "Use memory_maintain for a one-shot maintenance pass.",
+].join(" ");
+
+type ToolSpec = ReturnType<typeof getMcpToolRegistry>[number];
+type ToolMap = Map<string, ToolSpec>;
+
+interface HttpSession {
+  server: Server;
+  transport: StreamableHTTPServerTransport;
 }
 
-function isWorkflowResult(value: unknown): value is {
-  status: string;
-  summary: string;
-  suggestedNextAction: string;
-  warnings: string[];
-  errors: string[];
-  details: unknown;
-} {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.status === "string" &&
-    typeof record.summary === "string" &&
-    typeof record.suggestedNextAction === "string" &&
-    Array.isArray(record.warnings) &&
-    Array.isArray(record.errors) &&
-    Object.prototype.hasOwnProperty.call(record, "details")
-  );
-}
-
-function formatWorkflowResult(value: {
-  status: string;
-  summary: string;
-  suggestedNextAction: string;
-  warnings: string[];
-  errors: string[];
-}): string {
-  const lines = [
-    `Status: ${value.status}`,
-    `Summary: ${value.summary}`,
-    `Suggested Next Action: ${value.suggestedNextAction}`,
-  ];
-
-  if (value.warnings.length > 0) {
-    lines.push(`Warnings: ${value.warnings.join(" | ")}`);
-  }
-
-  if (value.errors.length > 0) {
-    lines.push(`Errors: ${value.errors.join(" | ")}`);
-  }
-
-  return lines.join("\n");
-}
-
-function writeMessage(message: Record<string, unknown>): void {
-  const payload = JSON.stringify(message);
-  const bytes = Buffer.byteLength(payload, "utf8");
-  stdout.write(`Content-Length: ${bytes}\r\n\r\n${payload}`);
-}
-
-function toolDefinitions(): ToolDefinition[] {
-  return [
-    {
-      name: "memory_assess",
-      description: "Assess memory, validation, automation, and integration health in one workflow result.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-      invoke: async (rootDir) => await buildMemoryAssessWorkflow(rootDir),
-    },
-    {
-      name: "memory_maintain",
-      description: "Run one high-level maintenance workflow and report whether sync/recall changed anything.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-      invoke: async (rootDir) => await runMemoryMaintainWorkflow(rootDir),
-    },
-    {
-      name: "memory_compact_handoff",
-      description: "Build a compact-ready handoff summary from current focus, backlog, automation, and validation state.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-      invoke: async (rootDir) => await buildMemoryCompactHandoffWorkflow(rootDir),
-    },
-    {
-      name: "memory_query",
-      description: "Query repository memory with natural-language retrieval modes.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        required: ["question"],
-        properties: {
-          question: { type: "string" },
-          scope: { type: "string", enum: ["state", "history", "all"] },
-          output: { type: "string", enum: ["text", "json"] },
-        },
-      },
-      invoke: async (rootDir, args) =>
-        await runQueryOrchestrator({
-          cwd: rootDir,
-          provider: "auto",
-          scope: typeof args.scope === "string" ? args.scope as "state" | "history" | "all" : "all",
-          question: String(args.question),
-          output: typeof args.output === "string" ? args.output as "text" | "json" : null,
-        }),
-    },
-    {
-      name: "memory_status",
-      description: "Inspect memory maintenance status, backlog, and checkpoint drift.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          checkpointId: { type: "string" },
-          showDiff: { type: "boolean" },
-        },
-      },
-      invoke: async (rootDir, args) => {
-        const checkpointId = typeof args.checkpointId === "string" ? args.checkpointId : null;
-        const checkpoint = checkpointId ? await readLatestCheckpoint(rootDir, checkpointId) : null;
-        return await buildStatusReport(rootDir, checkpoint, args.showDiff === true);
-      },
-    },
-    {
-      name: "memory_validate",
-      description: "Validate the current canonical memory system and automation metadata.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-      invoke: async (rootDir) => await validateMemory(rootDir),
-    },
-    {
-      name: "automation_status",
-      description: "Read local automation daemon status and latest run metadata.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-      invoke: async (rootDir) => await getAutomationStatus(rootDir),
-    },
-    {
-      name: "automation_ensure_running",
-      description: "Ensure the local automation daemon is running.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-      invoke: async (rootDir) => await ensureAutomationDaemonRunning(rootDir),
-    },
-    {
-      name: "automation_run_once",
-      description: "Run one automation maintenance cycle immediately.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-      invoke: async (rootDir) => await runAutomationCycle(rootDir),
-    },
-  ];
-}
-
-function response(id: unknown, result: unknown): Record<string, unknown> {
+function asToolSchema(tool: ToolSpec): Tool {
   return {
-    jsonrpc: "2.0",
-    id,
-    result,
+    name: tool.name,
+    title: tool.title,
+    description: tool.description,
+    inputSchema: z.toJSONSchema(tool.inputSchema) as Tool["inputSchema"],
+    annotations: toolAnnotations({
+      title: tool.title,
+      readOnly: tool.readOnly,
+    }),
   };
 }
 
-function errorResponse(id: unknown, code: number, message: string): Record<string, unknown> {
-  return {
-    jsonrpc: "2.0",
-    id,
-    error: {
-      code,
+async function sendProgressNotification(
+  progressToken: string | number | undefined,
+  sendNotification: (notification: ProgressNotification) => Promise<void>,
+  stageIndex: number,
+  totalStages: number,
+  message: string,
+): Promise<void> {
+  if (progressToken === undefined) {
+    return;
+  }
+
+  await sendNotification({
+    method: "notifications/progress",
+    params: {
+      progressToken,
+      progress: stageIndex,
+      total: totalStages,
       message,
     },
+  });
+}
+
+function formatZodError(error: ZodError): { message: string; details: unknown } {
+  return {
+    message: error.issues.map((issue) => issue.message).join(" | "),
+    details: error.issues.map((issue) => ({
+      code: issue.code,
+      path: issue.path.join("."),
+      message: issue.message,
+    })),
   };
 }
 
-async function handleRequest(rootDir: string, request: Record<string, unknown>): Promise<Record<string, unknown> | null> {
-  const id = request.id;
-  const method = request.method;
-  if (typeof method !== "string") {
-    return errorResponse(id, -32600, "Invalid request.");
-  }
-
-  if (method === "initialize") {
-    return response(id, {
-      protocolVersion: "2025-06-18",
+function createProtocolServer(defaultRootDir: string): Server {
+  const tools = getMcpToolRegistry();
+  const toolMap: ToolMap = new Map(tools.map((tool) => [tool.name, tool]));
+  const listedTools = tools.map(asToolSchema);
+  const server = new Server(
+    {
+      name: "agent-memory",
+      version: GENERATOR_VERSION,
+    },
+    {
       capabilities: {
         tools: {
           listChanged: false,
         },
       },
-      serverInfo: {
-        name: "agent-memory",
-        version: "0.3.0",
-      },
-    });
-  }
+      instructions: MCP_SERVER_INSTRUCTIONS,
+    },
+  );
+  const backend = new McpSessionBackend(defaultRootDir, server);
 
-  if (method === "notifications/initialized") {
-    return null;
-  }
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: listedTools,
+  }));
 
-  if (method === "tools/list") {
-    return response(id, {
-      tools: toolDefinitions().map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        inputSchema: tool.inputSchema,
-      })),
-    });
-  }
-
-  if (method === "tools/call") {
-    const params = request.params;
-    if (!params || typeof params !== "object" || Array.isArray(params)) {
-      return errorResponse(id, -32602, "Invalid tool call params.");
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const toolName = request.params.name;
+    const tool = toolMap.get(toolName);
+    if (!tool) {
+      return buildErrorResult(toolName, "tool_not_found", `Unknown tool: ${toolName}`);
     }
 
-    const requestParams = params as Record<string, unknown>;
-
-    const toolName = typeof requestParams.name === "string" ? requestParams.name : "";
-    const args = requestParams.arguments && typeof requestParams.arguments === "object" && !Array.isArray(requestParams.arguments)
-      ? requestParams.arguments as Record<string, unknown>
-      : {};
-    const tool = toolDefinitions().find((entry) => entry.name === toolName);
-    if (!tool) {
-      return errorResponse(id, -32601, `Unknown tool: ${toolName}`);
+    let args: unknown;
+    try {
+      args = tool.inputSchema.parse(request.params.arguments ?? {});
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const formatted = formatZodError(error);
+        return buildErrorResult(tool.name, "invalid_arguments", formatted.message, formatted.details);
+      }
+      return buildErrorResult(
+        tool.name,
+        "invalid_arguments",
+        error instanceof Error ? error.message : String(error),
+      );
     }
 
     try {
-      const result = await tool.invoke(rootDir, args);
-      return response(id, {
-        content: [
-          {
-            type: "text",
-            text: isWorkflowResult(result) ? formatWorkflowResult(result) : JSON.stringify(result, null, 2),
-          },
-        ],
-        ...(result && typeof result === "object" && !Array.isArray(result) ? { structuredContent: result } : {}),
-      });
+      const totalStages = tool.progressStages?.length ?? 0;
+      if (tool.progressStages && totalStages > 0) {
+        await sendProgressNotification(
+          extra._meta?.progressToken,
+          extra.sendNotification,
+          1,
+          totalStages,
+          tool.progressStages[0],
+        );
+      }
+
+      const rootDir = await backend.getRootDir();
+
+      if (tool.progressStages && totalStages > 1) {
+        await sendProgressNotification(
+          extra._meta?.progressToken,
+          extra.sendNotification,
+          2,
+          totalStages,
+          tool.progressStages[1],
+        );
+      }
+
+      const result = await tool.execute(rootDir, args as never);
+
+      if (tool.progressStages && totalStages > 2) {
+        await sendProgressNotification(
+          extra._meta?.progressToken,
+          extra.sendNotification,
+          3,
+          totalStages,
+          tool.progressStages[2],
+        );
+      }
+
+      const text = tool.formatResult ? tool.formatResult(result as never) : formatJsonResult(result);
+      return buildSuccessResult(tool.name, result, text);
     } catch (error) {
-      return response(id, {
-        content: [
-          {
-            type: "text",
-            text: error instanceof Error ? error.message : String(error),
-          },
-        ],
-        isError: true,
-      });
-    }
-  }
-
-  return errorResponse(id, -32601, `Unknown method: ${method}`);
-}
-
-export async function runMcpServer(rootDir: string): Promise<void> {
-  let buffer = Buffer.alloc(0);
-  stdin.on("data", async (chunk: Buffer) => {
-    buffer = Buffer.concat([buffer, chunk]);
-    while (true) {
-      const headerEnd = buffer.indexOf("\r\n\r\n");
-      if (headerEnd < 0) {
-        break;
-      }
-
-      const header = buffer.slice(0, headerEnd).toString("utf8");
-      const contentLengthMatch = header.match(/Content-Length:\s*(\d+)/i);
-      if (!contentLengthMatch) {
-        buffer = Buffer.alloc(0);
-        writeMessage(errorResponse(null, -32700, "Missing Content-Length header."));
-        break;
-      }
-
-      const contentLength = Number(contentLengthMatch[1]);
-      const totalLength = headerEnd + 4 + contentLength;
-      if (buffer.length < totalLength) {
-        break;
-      }
-
-      const payloadBuffer = buffer.slice(headerEnd + 4, totalLength);
-      buffer = buffer.slice(totalLength);
-
-      try {
-        const request = JSON.parse(payloadBuffer.toString("utf8")) as Record<string, unknown>;
-        const result = await handleRequest(rootDir, request);
-        if (result) {
-          writeMessage(result);
-        }
-      } catch (error) {
-        writeMessage(errorResponse(null, -32700, error instanceof Error ? error.message : String(error)));
-      }
+      return buildErrorResult(
+        tool.name,
+        "execution_failed",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   });
 
-  stdin.resume();
-  await new Promise(() => undefined);
+  return server;
+}
+
+function normalizeLoopbackHost(hostname: string): string {
+  if (
+    hostname === "0.0.0.0" ||
+    hostname === "::" ||
+    hostname === "::1" ||
+    hostname === "127.0.0.1"
+  ) {
+    return "localhost";
+  }
+
+  return hostname;
+}
+
+function listenAddressUrl(address: AddressInfo): URL {
+  const host = normalizeLoopbackHost(address.address);
+  const wrappedHost = address.family === "IPv6" && !host.startsWith("[") ? `[${host}]` : host;
+  return new URL(`http://${wrappedHost}:${address.port}`);
+}
+
+function allowedHostsForServer(url: URL, configured: string[]): string[] {
+  if (configured.length > 0) {
+    return configured.map((host) => host.toLowerCase());
+  }
+
+  const hosts = new Set<string>([url.host.toLowerCase()]);
+  if (url.port) {
+    hosts.add(`localhost:${url.port}`.toLowerCase());
+    hosts.add(`127.0.0.1:${url.port}`.toLowerCase());
+    hosts.add(`[::1]:${url.port}`.toLowerCase());
+  }
+  return Array.from(hosts);
+}
+
+function isAllowedHost(hostHeader: string | undefined, allowedHosts: string[]): boolean {
+  if (!hostHeader) {
+    return false;
+  }
+
+  return allowedHosts.includes(hostHeader.toLowerCase());
+}
+
+async function attachHttpSession(
+  sessions: Map<string, HttpSession>,
+  rootDir: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  let sessionServer: Server | null = null;
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+    onsessioninitialized: async (sessionId) => {
+      if (!sessionServer) {
+        return;
+      }
+      sessions.set(sessionId, {
+        server: sessionServer,
+        transport,
+      });
+    },
+    onsessionclosed: async (sessionId) => {
+      const session = sessions.get(sessionId);
+      sessions.delete(sessionId);
+      await session?.server.close().catch(() => undefined);
+    },
+  });
+
+  sessionServer = createProtocolServer(rootDir);
+  transport.onclose = () => {
+    const sessionId = transport.sessionId;
+    if (!sessionId) {
+      return;
+    }
+    const session = sessions.get(sessionId);
+    sessions.delete(sessionId);
+    void session?.server.close().catch(() => undefined);
+  };
+
+  await sessionServer.connect(transport);
+  await transport.handleRequest(req, res);
+}
+
+async function runHttpMcpServer(options: McpCommandOptions): Promise<void> {
+  const port = options.port;
+  if (port === null) {
+    throw new Error("The --port flag is required when using --transport=http.");
+  }
+
+  const host = options.host ?? "127.0.0.1";
+  const sessions = new Map<string, HttpSession>();
+  const server = createHttpServer(async (req, res) => {
+    try {
+      const requestUrl = new URL(req.url ?? "/", "http://localhost");
+      if (requestUrl.pathname !== MCP_HTTP_PATH) {
+        res.statusCode = 404;
+        res.end("Not found");
+        return;
+      }
+
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        res.statusCode = 500;
+        res.end("Server address is unavailable");
+        return;
+      }
+
+      const allowedHosts = allowedHostsForServer(listenAddressUrl(address), options.allowedHosts);
+      if (!isAllowedHost(req.headers.host, allowedHosts)) {
+        res.statusCode = 403;
+        res.end(`Access is only allowed at ${allowedHosts.join(", ")}`);
+        return;
+      }
+
+      const sessionIdHeader = req.headers["mcp-session-id"];
+      const sessionId = Array.isArray(sessionIdHeader) ? sessionIdHeader[0] : sessionIdHeader;
+      if (sessionId) {
+        const session = sessions.get(sessionId);
+        if (!session) {
+          res.statusCode = 404;
+          res.end("Session not found");
+          return;
+        }
+
+        await session.transport.handleRequest(req, res);
+        return;
+      }
+
+      if (req.method === "POST") {
+        await attachHttpSession(sessions, options.cwd, req, res);
+        return;
+      }
+
+      res.statusCode = 400;
+      res.end("Session ID is required for this request");
+    } catch (error) {
+      res.statusCode = 500;
+      res.end(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Failed to determine the HTTP MCP server address.");
+  }
+
+  const url = listenAddressUrl(address);
+  console.error([
+    `Listening on ${url.toString()}`,
+    "Put this in your client config:",
+    JSON.stringify({
+      mcpServers: {
+        "agent-memory": {
+          url: new URL(MCP_HTTP_PATH, url).toString(),
+        },
+      },
+    }, null, 2),
+    "Default integrate-generated config still uses stdio via `npx agent-memory mcp`.",
+  ].join("\n"));
+
+  await new Promise<void>(() => undefined);
+}
+
+export async function runMcpServer(options: McpCommandOptions): Promise<void> {
+  if (options.transport === "http") {
+    await runHttpMcpServer(options);
+    return;
+  }
+
+  const server = createProtocolServer(options.cwd);
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  await new Promise<void>(() => undefined);
 }
