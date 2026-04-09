@@ -1,3 +1,22 @@
+<!-- agent-memory:entry version=3 bundleHash=37b2761c7e3cd464944e92a2dce3e0a81841fd70230390a0f72009a4770a4e9b start -->
+## Project Memory
+
+This repository keeps canonical project memory in `.agent-memory/state.json`.
+
+History and checkpoints live in `.agent-memory/history/`.
+
+Readable projections live in `docs/agent-memory/`.
+
+Recommended reading order:
+1. `docs/agent-memory/README.md`
+2. `docs/agent-memory/project-map.md`
+3. `docs/agent-memory/current-focus.md`
+4. `docs/agent-memory/gotchas.md` when debugging gets noisy or surprising
+5. `docs/agent-memory/next-steps.md` when you need a clean starting point
+
+Use `npx agent-memory sync`, `npx agent-memory recall`, and `npx agent-memory query` to maintain and retrieve project memory.
+<!-- agent-memory:entry end -->
+
 <!-- agent-memory:codex-integration start -->
 ## agent-memory Integration
 

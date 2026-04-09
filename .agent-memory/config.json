@@ -27,7 +27,7 @@
   },
   "automation": {
     "intervalMinutes": 15,
-    "provider": "auto",
+    "provider": "codex",
     "importSyncBeforeRecall": true,
     "autoRecall": true
   },

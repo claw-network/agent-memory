@@ -1,12 +1,12 @@
-<!-- agent-memory:projection file=gotchas version=3 bundleHash=064a82ecbc8b63ca97d01824fdb45f860aa0481cd2ebf8e1bdd8e392cd4c29d8 -->
+<!-- agent-memory:projection file=gotchas version=3 bundleHash=37b2761c7e3cd464944e92a2dce3e0a81841fd70230390a0f72009a4770a4e9b -->
 # Gotchas
 
 Keep this file short, concrete, and limited to traps that are genuinely expensive to rediscover.
 
-## Dogfood provider auth is environment-dependent
+## Initial gotcha
 
-Symptom: Self-host init or repair can hang or fail when local agent auth is missing.
+Symptom: A fake failure is encountered.
 
-Cause: Dogfood scripts rely on Codex or Claude availability unless overridden.
+Cause: The fake provider injected this sample gotcha.
 
-Correct path: Set AGENT_MEMORY_DOGFOOD_PROVIDER or explicit AGENT_MEMORY_*_BIN values when exercising the repo.
+Correct path: Follow the generated docs and rerun the command.

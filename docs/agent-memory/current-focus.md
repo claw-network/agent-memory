@@ -1,37 +1,31 @@
-<!-- agent-memory:projection file=current-focus version=3 bundleHash=064a82ecbc8b63ca97d01824fdb45f860aa0481cd2ebf8e1bdd8e392cd4c29d8 -->
+<!-- agent-memory:projection file=current-focus version=3 bundleHash=37b2761c7e3cd464944e92a2dce3e0a81841fd70230390a0f72009a4770a4e9b -->
 # Current Focus
 
-The repository is configured to self-host and exercise its own memory system.
+codex init focus summary
 
 ## Current State
 
-- Dogfood scripts exist under scripts/dogfood.
-- CLI, integration, automation, retention, MCP, and workflow features are covered by tests.
-- Stable self-host assets should live in repo root and stay reviewable in git.
+- Mode: init
+- Project: @agent-connect/memory
 
 ## Known Risks
 
-- Real provider authentication may differ across local environments.
-- Dogfood repair uses provider-driven editing and should stay isolated in a temporary worktree.
-- Automation runtime and archive outputs must stay ignored while stable memory assets remain tracked.
+- Fake provider risk for init.
 
 ## Validation Snapshot
 
 - Status: passed
-- Validated at: 2026-03-28T00:00:00.000Z
-- Summary: Baseline validation was synthesized for self-host initialization.
+- Validated at: 2026-04-09T08:17:49.143Z
+- Summary: Validation completed from fake provider results.
 
 ## Validation Results
 
-- PASSED npm run build: Build command is available.
-- PASSED npm test: Test suite command is available.
+- PASSED node -e process.stdout.write('validation-ok'): validation-ok
 
 ## Suggested Next Actions
 
-- Run npm run dogfood:exercise after code changes.
-- Run npm run dogfood:repair when self-host drift or breakage is detected.
+- Keep the validation baseline fresh.
 
 ## Agent-Recommended Validation Commands
 
-- `npm run build` (build): Confirm the package still compiles.
-- `npm test` (test): Run the full CLI, workflow, retention, and dogfood suite.
+- `node -e process.stdout.write('validation-ok')` (node smoke): Confirm Node-based command execution works.

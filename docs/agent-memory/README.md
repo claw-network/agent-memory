@@ -1,4 +1,4 @@
-<!-- agent-memory:projection file=readme version=3 bundleHash=064a82ecbc8b63ca97d01824fdb45f860aa0481cd2ebf8e1bdd8e392cd4c29d8 -->
+<!-- agent-memory:projection file=readme version=3 bundleHash=37b2761c7e3cd464944e92a2dce3e0a81841fd70230390a0f72009a4770a4e9b -->
 # Agent Memory
 
 This directory is a generated projection of the active canonical repository memory state.
@@ -9,9 +9,9 @@ This directory is a generated projection of the active canonical repository memo
 - History log: `.agent-memory/history/events.jsonl`
 - Checkpoints: `.agent-memory/history/checkpoints/`
 - Import sources: `.agent-memory/sources.json`
-- Last generated: 2026-03-28T15:12:27.127Z
+- Last generated: 2026-04-09T08:18:49.148Z
 - Provider: `codex`
-- Recommended entry file: `README.md`
+- Recommended entry file: `AGENTS.md`
 
 ## Reading Order
 

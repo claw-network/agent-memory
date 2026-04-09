@@ -14,6 +14,7 @@ interface CommandResult {
   stdout: string;
   stderr: string;
   error: Error | null;
+  timedOut: boolean;
 }
 
 interface ResolvedProvider {
@@ -42,9 +43,25 @@ const STRUCTURED_PROBE_SCHEMA: Record<string, unknown> = {
   },
 };
 const STRUCTURED_PROBE_PROMPT = "Return exactly one JSON object matching the schema. Set ok=true.";
+const DEFAULT_PROVIDER_PROBE_TIMEOUT_MS = 20_000;
+const DEFAULT_PROVIDER_INVOKE_TIMEOUT_MS = 120_000;
 
 function getConfiguredBinary(name: ProviderName, env: NodeJS.ProcessEnv = process.env): string {
   return env[PROVIDER_BIN_ENV[name]] || name;
+}
+
+function parseTimeoutMs(envKey: string, fallback: number, env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env[envKey];
+  if (!raw) {
+    return fallback;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(parsed);
 }
 
 function isAuthFailure(output: string): boolean {
@@ -109,6 +126,7 @@ async function runCommand(
     cwd: string;
     stdin?: string;
     env?: NodeJS.ProcessEnv;
+    timeoutMs?: number;
   },
 ): Promise<CommandResult> {
   return new Promise((resolve) => {
@@ -124,6 +142,32 @@ async function runCommand(
     let stdout = "";
     let stderr = "";
     let settled = false;
+    const timer = options.timeoutMs
+      ? setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            child.kill("SIGKILL");
+            resolve({
+              code: null,
+              stdout,
+              stderr,
+              error: null,
+              timedOut: true,
+            });
+          }
+        }, options.timeoutMs)
+      : null;
+
+    function finalize(result: CommandResult): void {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+      resolve(result);
+    }
 
     child.stdout.on("data", (chunk) => {
       stdout += String(chunk);
@@ -134,27 +178,23 @@ async function runCommand(
     });
 
     child.on("error", (error) => {
-      if (!settled) {
-        settled = true;
-        resolve({
-          code: null,
-          stdout,
-          stderr,
-          error,
-        });
-      }
+      finalize({
+        code: null,
+        stdout,
+        stderr,
+        error,
+        timedOut: false,
+      });
     });
 
     child.on("close", (code) => {
-      if (!settled) {
-        settled = true;
-        resolve({
-          code,
-          stdout,
-          stderr,
-          error: null,
-        });
-      }
+      finalize({
+        code,
+        stdout,
+        stderr,
+        error: null,
+        timedOut: false,
+      });
     });
 
     child.stdin.end(options.stdin ?? "");
@@ -174,6 +214,7 @@ async function probeStructuredCodex(binary: string, cwd: string, env: NodeJS.Pro
   const tempDir = await mkdtemp(join(tmpdir(), "agent-memory-codex-probe-"));
   const schemaPath = join(tempDir, "probe-schema.json");
   const outputPath = join(tempDir, "probe-output.json");
+  const timeoutMs = parseTimeoutMs("AGENT_MEMORY_PROVIDER_PROBE_TIMEOUT_MS", DEFAULT_PROVIDER_PROBE_TIMEOUT_MS, env);
 
   try {
     await writeFile(schemaPath, JSON.stringify(STRUCTURED_PROBE_SCHEMA), "utf8");
@@ -197,10 +238,19 @@ async function probeStructuredCodex(binary: string, cwd: string, env: NodeJS.Pro
         cwd,
         env,
         stdin: STRUCTURED_PROBE_PROMPT,
+        timeoutMs,
       },
     );
 
     const combinedOutput = `${result.stdout}\n${result.stderr}`.trim();
+    if (result.timedOut) {
+      return {
+        ok: false,
+        binary,
+        reason: "runtime",
+        message: `Codex structured probe timed out after ${timeoutMs}ms.`,
+      };
+    }
     if (result.error) {
       return {
         ok: false,
@@ -231,15 +281,18 @@ async function probeStructuredCodex(binary: string, cwd: string, env: NodeJS.Pro
 }
 
 async function probeStructuredClaude(binary: string, cwd: string, env: NodeJS.ProcessEnv): Promise<ProviderProbeResult> {
+  const timeoutMs = parseTimeoutMs("AGENT_MEMORY_PROVIDER_PROBE_TIMEOUT_MS", DEFAULT_PROVIDER_PROBE_TIMEOUT_MS, env);
   const result = await runCommand(
     binary,
     [
       "-p",
+      "--bare",
       "--no-session-persistence",
       "--permission-mode",
       "dontAsk",
       "--output-format",
       "text",
+      "--strict-mcp-config",
       "--json-schema",
       JSON.stringify(STRUCTURED_PROBE_SCHEMA),
       "--tools",
@@ -248,10 +301,18 @@ async function probeStructuredClaude(binary: string, cwd: string, env: NodeJS.Pr
       cwd,
       STRUCTURED_PROBE_PROMPT,
     ],
-    { cwd, env },
+    { cwd, env, timeoutMs },
   );
 
   const combinedOutput = `${result.stdout}\n${result.stderr}`.trim();
+  if (result.timedOut) {
+    return {
+      ok: false,
+      binary,
+      reason: "runtime",
+      message: `Claude Code structured probe timed out after ${timeoutMs}ms.`,
+    };
+  }
   if (result.error) {
     return {
       ok: false,
@@ -344,6 +405,7 @@ async function invokeCodex(
   const tempDir = await mkdtemp(join(tmpdir(), "agent-memory-codex-"));
   const schemaPath = join(tempDir, "bundle-schema.json");
   const outputPath = join(tempDir, "provider-output.json");
+  const timeoutMs = parseTimeoutMs("AGENT_MEMORY_PROVIDER_INVOKE_TIMEOUT_MS", DEFAULT_PROVIDER_INVOKE_TIMEOUT_MS);
 
   try {
     await writeFile(schemaPath, JSON.stringify(input.schema), "utf8");
@@ -366,10 +428,17 @@ async function invokeCodex(
       {
         cwd: input.cwd,
         stdin: input.prompt,
+        timeoutMs,
       },
     );
 
     const combinedOutput = `${result.stdout}\n${result.stderr}`.trim();
+    if (result.timedOut) {
+      throw new Error(
+        `Codex timed out after ${timeoutMs}ms while generating structured repository output. ` +
+          "The current prompt may be too expensive for the configured model or environment.",
+      );
+    }
     if (result.error) {
       throw new Error(`Failed to start Codex: ${result.error.message}`);
     }
@@ -401,15 +470,18 @@ async function invokeClaude(
   provider: ResolvedProvider,
   input: ProviderInvocation,
 ): Promise<ProviderInvocationResult> {
+  const timeoutMs = parseTimeoutMs("AGENT_MEMORY_PROVIDER_INVOKE_TIMEOUT_MS", DEFAULT_PROVIDER_INVOKE_TIMEOUT_MS);
   const result = await runCommand(
     provider.binary,
     [
       "-p",
+      "--bare",
       "--no-session-persistence",
       "--permission-mode",
       "dontAsk",
       "--output-format",
       "text",
+      "--strict-mcp-config",
       "--json-schema",
       JSON.stringify(input.schema),
       "--tools",
@@ -418,10 +490,16 @@ async function invokeClaude(
       input.cwd,
       input.prompt,
     ],
-    { cwd: input.cwd },
+    { cwd: input.cwd, timeoutMs },
   );
 
   const combinedOutput = `${result.stdout}\n${result.stderr}`.trim();
+  if (result.timedOut) {
+    throw new Error(
+      `Claude Code timed out after ${timeoutMs}ms while generating structured repository output. ` +
+        "The current prompt may be too expensive for the configured model or environment.",
+    );
+  }
   if (result.error) {
     throw new Error(`Failed to start Claude Code: ${result.error.message}`);
   }

@@ -74,3 +74,29 @@ process.exit(1);
     /authentication is not ready/i,
   );
 });
+
+test("probeProviderForStructuredUse reports timeout clearly", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-memory-provider-timeout-"));
+  const codexPath = path.join(dir, "fake-codex-timeout.js");
+
+  await writeExecutable(codexPath, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args.includes("--version")) {
+  process.stdout.write("fake codex\\n");
+  process.exit(0);
+}
+setTimeout(() => {
+  process.stdout.write('{"ok":true}');
+  process.exit(0);
+}, 5000);
+`);
+
+  const probe = await probeProviderForStructuredUse("codex", process.cwd(), {
+    AGENT_MEMORY_CODEX_BIN: codexPath,
+    AGENT_MEMORY_PROVIDER_PROBE_TIMEOUT_MS: "100",
+  });
+
+  assert.equal(probe.ok, false);
+  assert.equal(probe.reason, "runtime");
+  assert.match(probe.message, /timed out/i);
+});

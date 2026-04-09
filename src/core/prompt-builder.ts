@@ -27,7 +27,8 @@ function buildContextPayload(context: CollectedContext): Record<string, unknown>
 export function buildDiscoveryPrompt(context: CollectedContext): string {
   return [
     "You are generating durable project memory for a software repository.",
-    "Explore the repository with read-only inspection only. Do not edit files, do not write patches, and do not invent details that are not grounded in the repo.",
+    "Use the supplied context JSON as your primary evidence. Do not edit files, do not write patches, and do not invent details that are not grounded in the repo.",
+    "Do not scan the whole repository by default. Only inspect additional files if the supplied context is clearly insufficient, and keep any extra inspection narrowly targeted.",
     "Return exactly one JSON object matching the provided schema and nothing else.",
     "Use repository-relative paths everywhere.",
     "Keep summaries concrete and high-signal.",
@@ -47,7 +48,9 @@ export function buildFinalizePrompt(
 ): string {
   return [
     "You are repairing and finalizing a repository memory bundle.",
-    "Explore the repository again if needed, but do not edit files.",
+    "Use the supplied context, discovery bundle, and validation results as your primary evidence.",
+    "Do not rescan the whole repository by default. Only inspect additional files if a critical gap remains, and keep any extra inspection narrowly targeted.",
+    "Do not edit files.",
     "Return exactly one JSON object matching the provided schema and nothing else.",
     "You must address any schema issues, missing details, and validation results from the previous pass.",
     "Use repository-relative paths everywhere.",

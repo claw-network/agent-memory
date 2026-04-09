@@ -1,14 +1,14 @@
-<!-- agent-memory:projection file=project-map version=3 bundleHash=064a82ecbc8b63ca97d01824fdb45f860aa0481cd2ebf8e1bdd8e392cd4c29d8 -->
+<!-- agent-memory:projection file=project-map version=3 bundleHash=37b2761c7e3cd464944e92a2dce3e0a81841fd70230390a0f72009a4770a4e9b -->
 # Project Map
 
-Self-host dogfood baseline for the agent-memory repository.
+codex generated init bundle
 
 ## Engineering Facts
 
 - Primary ecosystem: node
 - Package manager: npm
 - Workspace mechanism: none
-- Recommended entry file: `README.md`
+- Recommended entry file: `AGENTS.md`
 
 ## Key Paths
 
@@ -19,33 +19,24 @@ Self-host dogfood baseline for the agent-memory repository.
 
 ## Modules
 
-- `src/commands` (commands): CLI entrypoints for operator-facing actions.
-- `src/core` (core): Canonical memory, automation, integration, query, and workflow orchestration.
-- `scripts/dogfood` (dogfood): Repo self-host exercise and repair flows.
-- `test` (tests): Unit, CLI integration, retention, workflow, and dogfood coverage.
+- `src/core` (src/core): Core product logic.
 
 ## Entrypoints
 
-- `src/cli.ts`: Primary CLI entrypoint.
-- `scripts/dogfood/init.mjs`: Self-host baseline bootstrap.
-- `scripts/dogfood/exercise.mjs`: Isolated worktree dogfood exercise runner.
-- `scripts/dogfood/repair.mjs`: Deterministic plus provider-driven self-heal runner.
+- `README.md`: Primary CLI entrypoint.
 
 ## Dense Source Areas
 
-- `src/core`: Core product logic lives here.
-- `scripts/dogfood`: Self-host automation and repair orchestration.
-- `test`: Coverage is broad and doubles as executable product spec.
+- `src/core`: Core repository logic lives here.
 
 ## Architecture Notes
 
-- Canonical state lives under .agent-memory and projects into docs/agent-memory.
-- Automation, integration, MCP workflow, retention, and dogfood are all first-class product surfaces.
-- The repository now self-hosts its own memory and integration baseline.
+- Fake provider architecture note for init.
+- Provider used: codex.
 
 ## First Files To Read
 
+- `package.json`
 - `README.md`
 - `src/cli.ts`
-- `src/core/workflow-orchestrator.ts`
 - `scripts/dogfood/lib.mjs`
