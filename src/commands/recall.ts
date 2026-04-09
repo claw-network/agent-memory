@@ -1,6 +1,7 @@
 import { applyRecall, prepareRecall } from "../core/recall-orchestrator";
 import { confirm, formatPlan, formatUnrecalledHistorySummary } from "../core/command-helpers";
 import { readConfig } from "../core/config-store";
+import { assertProviderReady } from "../core/provider-adapters";
 import type { RecallOptions } from "../types";
 
 const MAX_DIFF_LINES = 80;
@@ -18,6 +19,7 @@ function renderDiffPreview(diff: string): { text: string; truncated: boolean } {
 }
 
 export async function runRecall(options: RecallOptions): Promise<number> {
+  await assertProviderReady(options.provider, options.cwd);
   const config = await readConfig(options.cwd);
   const effectiveSection = options.section === "all" ? config.recall.defaultSection : options.section;
   const effectiveSource = options.source === "all" ? config.recall.defaultSource : options.source;

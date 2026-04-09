@@ -329,6 +329,14 @@ export async function resolveProviderForStructuredUse(
   );
 }
 
+export async function assertProviderReady(
+  preference: ProviderPreference,
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  await resolveProviderForStructuredUse(preference, cwd, env);
+}
+
 async function invokeCodex(
   provider: ResolvedProvider,
   input: ProviderInvocation,

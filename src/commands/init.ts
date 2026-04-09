@@ -7,9 +7,11 @@ import { getStatePath } from "../core/state-store";
 import { projectState } from "../core/bundle-projector";
 import { createEmptyMaintenance } from "../core/state-store";
 import { buildState } from "../core/state-store";
+import { assertProviderReady } from "../core/provider-adapters";
 import type { CommandOptions } from "../types";
 
 export async function runInit(options: CommandOptions): Promise<number> {
+  await assertProviderReady(options.provider, options.cwd);
   const context = await collectContext(options.cwd, "init");
 
   printProjectSummary(context.scan);

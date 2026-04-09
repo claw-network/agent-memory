@@ -38,11 +38,16 @@ npx agent-memory init
 ## Recommended Workflow
 
 1. Run `init` once.
-2. Use `update` when current repository reality changes.
-3. Use `add` and `sync` to ingest external sessions.
-4. Use `recall` to consolidate history into active memory.
-5. Use `query` when you need an answer from memory instead of reading all artifacts manually.
-6. Use `validate` to audit integrity and backlog health.
+2. Use `status` to inspect memory health, backlog, and drift before changing anything.
+3. Use `query` when you need an answer from memory instead of reading all artifacts manually.
+4. Use `integrate --status` and `integrate --dry-run` to inspect client wiring safely.
+5. Use `mcp` when you are ready to expose the local MCP surface to Claude Code or Codex.
+6. Use `update` when current repository reality changes.
+7. Use `add` and `sync` to ingest external sessions.
+8. Use `recall` to consolidate history into active memory.
+9. Use `validate` to audit integrity and backlog health.
+
+`automate`, workflow-first MCP tools, and self-host dogfood remain available, but they are advanced paths rather than the default first-run path.
 
 ## When To Use `recall`
 

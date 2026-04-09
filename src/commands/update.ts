@@ -6,6 +6,7 @@ import { planProjectionWrites } from "../core/merge-files";
 import { getStatePath } from "../core/state-store";
 import { projectState } from "../core/bundle-projector";
 import { buildState } from "../core/state-store";
+import { assertProviderReady } from "../core/provider-adapters";
 import type { CommandOptions } from "../types";
 
 export async function runUpdate(options: CommandOptions): Promise<number> {
@@ -13,6 +14,7 @@ export async function runUpdate(options: CommandOptions): Promise<number> {
   if (!context.previousState) {
     throw new Error("No canonical state exists yet. Run `agent-memory init` before `agent-memory update`.");
   }
+  await assertProviderReady(options.provider, options.cwd);
 
   printProjectSummary(context.scan);
   console.log(`Provider preference: ${options.provider}`);

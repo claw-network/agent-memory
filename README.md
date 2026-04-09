@@ -89,6 +89,19 @@ pnpm add -D @agent-connect/memory
 
 After installation, use the local CLI with `npx agent-memory ...`.
 
+## Main Path
+
+The default operator path is:
+
+1. `npx agent-memory init`
+2. `npx agent-memory status`
+3. `npx agent-memory query "what should I do next?"`
+4. `npx agent-memory integrate --status`
+5. `npx agent-memory integrate --dry-run`
+6. `npx agent-memory mcp`
+
+Advanced surfaces such as `automate`, `memory_maintain`, and self-host dogfood are still available, but they are no longer the first-run path.
+
 ## How It Works
 
 `agent-memory` no longer treats markdown files as the source of truth.
@@ -299,7 +312,7 @@ This is the lightweight startup command used by Claude Code `SessionStart` hooks
 
 ### Self-host dogfood
 
-This repository can also exercise itself as a long-lived dogfood arena.
+This repository can also exercise itself as a canary workflow for deeper self-host validation.
 
 ```bash
 npm run dogfood:init
@@ -325,6 +338,7 @@ Current dogfood behavior:
 - reports are written under `temp/dogfood/reports/`
 - `repair` first does deterministic maintenance/integration repair, then can escalate to whole-repo provider-driven repair if source-level breakage remains
 - successful repair only applies a patch back to the root worktree; it does not auto-commit or auto-push
+- dogfood is intentionally a secondary signal during the current stability push; keep build, test, pack, and consumer smoke green first
 
 ### Audit health
 

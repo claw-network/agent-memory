@@ -93,7 +93,7 @@ function buildBundle(provider, prompt) {
   const scan = context.staticScan || {};
   const selectedEntryFile = context.selectedEntryFile || "README.md";
   const snapshotStatus = computeSnapshotStatus(validationResults);
-  const validatedAt = snapshotStatus === "not-run" ? null : "2026-03-26T00:00:00.000Z";
+  const validatedAt = snapshotStatus === "not-run" ? null : new Date(Date.now() - 60 * 1000).toISOString();
 
   return {
     project: {

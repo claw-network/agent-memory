@@ -5,25 +5,30 @@ Thanks for contributing to `agent-memory`.
 ## Local Development
 
 ```bash
-npm install
+npm ci
 npm run build
+npm run test
 ```
 
 Useful local smoke tests:
 
 ```bash
+npm run smoke:consumer
+npm run smoke:real-provider
 node dist/cli.js init --yes
-node dist/cli.js init --yes --validate
-node dist/cli.js update --yes
-node dist/cli.js update --yes --validate
-node dist/cli.js validate
+node dist/cli.js status
+node dist/cli.js query "what should I do next?"
+node dist/cli.js integrate --status
+node dist/cli.js integrate --dry-run
 ```
 
 Package-level smoke test:
 
 ```bash
-npm pack
+npm run pack:dry-run
 ```
+
+For command flows that rely on Codex or Claude, `agent-memory` now probes provider availability before the command does deeper work. If a provider is missing or not authenticated, fix that first rather than debugging the later command output.
 
 ## Published Package Usage
 
@@ -34,6 +39,11 @@ Typical consumer workflow:
 ```bash
 npm install -D @agent-connect/memory
 npx agent-memory init
+npx agent-memory status
+npx agent-memory query "what should I do next?"
+npx agent-memory integrate --status
+npx agent-memory integrate --dry-run
+npx agent-memory mcp
 ```
 
 ## Project Expectations

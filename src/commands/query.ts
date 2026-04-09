@@ -1,8 +1,10 @@
 import { readConfig } from "../core/config-store";
+import { assertProviderReady } from "../core/provider-adapters";
 import { runQuery as runQueryOrchestrator } from "../core/query-orchestrator";
 import type { QueryOptions } from "../types";
 
 export async function runQuery(options: QueryOptions): Promise<number> {
+  await assertProviderReady(options.provider, options.cwd);
   const config = await readConfig(options.cwd);
   const effectiveOutput = options.output ?? config.query.defaultOutput;
   const result = await runQueryOrchestrator(options);

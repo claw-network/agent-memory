@@ -420,69 +420,32 @@ export function parseTestSummary(result) {
 }
 
 export async function startMcpSession(worktreeDir, env) {
-  const child = spawn("npm", ["exec", "--", "agent-memory", "mcp"], {
+  const [{ Client }, { StdioClientTransport }] = await Promise.all([
+    import("@modelcontextprotocol/sdk/client/index.js"),
+    import("@modelcontextprotocol/sdk/client/stdio.js"),
+  ]);
+  const transport = new StdioClientTransport({
+    command: "npm",
+    args: ["exec", "--", "agent-memory", "mcp"],
     cwd: worktreeDir,
     env: {
       ...process.env,
       ...env,
     },
-    stdio: ["pipe", "pipe", "pipe"],
+    stderr: "pipe",
   });
-
-  let buffer = Buffer.alloc(0);
-  const pending = new Map();
-  let nextId = 1;
-
-  child.stdout.on("data", (chunk) => {
-    buffer = Buffer.concat([buffer, Buffer.from(chunk)]);
-    while (true) {
-      const headerEnd = buffer.indexOf("\r\n\r\n");
-      if (headerEnd < 0) {
-        break;
-      }
-
-      const header = buffer.slice(0, headerEnd).toString("utf8");
-      const match = header.match(/Content-Length:\s*(\d+)/i);
-      if (!match) {
-        buffer = Buffer.alloc(0);
-        break;
-      }
-
-      const contentLength = Number(match[1]);
-      const totalLength = headerEnd + 4 + contentLength;
-      if (buffer.length < totalLength) {
-        break;
-      }
-
-      const payload = JSON.parse(buffer.slice(headerEnd + 4, totalLength).toString("utf8"));
-      buffer = buffer.slice(totalLength);
-      if (payload.id !== undefined && pending.has(payload.id)) {
-        pending.get(payload.id)(payload);
-        pending.delete(payload.id);
-      }
-    }
-  });
-
-  async function request(method, params) {
-    const id = nextId++;
-    const payload = JSON.stringify({ jsonrpc: "2.0", id, method, params });
-    child.stdin.write(`Content-Length: ${Buffer.byteLength(payload, "utf8")}\r\n\r\n${payload}`);
-    return await new Promise((resolve) => {
-      pending.set(id, resolve);
-    });
-  }
-
-  async function notify(method, params) {
-    const payload = JSON.stringify({ jsonrpc: "2.0", method, params });
-    child.stdin.write(`Content-Length: ${Buffer.byteLength(payload, "utf8")}\r\n\r\n${payload}`);
-  }
+  const client = new Client(
+    { name: "agent-memory-dogfood", version: "1.0.0" },
+    { capabilities: {} },
+  );
+  await client.connect(transport);
 
   return {
-    request,
-    notify,
+    client,
+    transport,
     async close() {
-      child.kill("SIGTERM");
-      await new Promise((resolve) => child.on("close", resolve));
+      await client.close().catch(() => undefined);
+      await transport.close().catch(() => undefined);
     },
   };
 }
@@ -490,20 +453,18 @@ export async function startMcpSession(worktreeDir, env) {
 export async function runMcpSmoke(worktreeDir, env) {
   const session = await startMcpSession(worktreeDir, env);
   try {
-    const initialize = await session.request("initialize", {});
-    await session.notify("notifications/initialized", {});
-    const tools = await session.request("tools/list", {});
-    const toolNames = Array.isArray(tools.result?.tools) ? tools.result.tools.map((tool) => tool.name) : [];
-    const assess = await session.request("tools/call", { name: "memory_assess", arguments: {} });
-    const handoff = await session.request("tools/call", { name: "memory_compact_handoff", arguments: {} });
-    const maintain = await session.request("tools/call", { name: "memory_maintain", arguments: {} });
+    const tools = await session.client.listTools();
+    const toolNames = Array.isArray(tools.tools) ? tools.tools.map((tool) => tool.name) : [];
+    const assess = await session.client.callTool({ name: "memory_assess", arguments: {} });
+    const handoff = await session.client.callTool({ name: "memory_compact_handoff", arguments: {} });
+    const maintain = await session.client.callTool({ name: "memory_maintain", arguments: {} });
     return {
       success: true,
-      serverName: initialize.result?.serverInfo?.name ?? null,
+      serverName: "agent-memory",
       tools: toolNames,
-      memoryAssess: assess.result?.structuredContent ?? null,
-      memoryCompactHandoff: handoff.result?.structuredContent ?? null,
-      memoryMaintain: maintain.result?.structuredContent ?? null,
+      memoryAssess: assess.structuredContent ?? null,
+      memoryCompactHandoff: handoff.structuredContent ?? null,
+      memoryMaintain: maintain.structuredContent ?? null,
       error: null,
     };
   } catch (error) {

@@ -21,8 +21,12 @@
     "dogfood:exercise": "node scripts/dogfood/exercise.mjs",
     "dogfood:repair": "node scripts/dogfood/repair.mjs",
     "dogfood:status": "node scripts/dogfood/status.mjs",
+    "pack:dry-run": "npm pack --dry-run",
     "prepack": "npm run build",
-    "test": "npm run build && node --test test/*.test.js"
+    "smoke:consumer": "node scripts/smoke/consumer.mjs",
+    "smoke:real-provider": "node scripts/smoke/real-provider.mjs",
+    "test": "npm run build && npm run test:unit",
+    "test:unit": "node --test test/*.test.js"
   },
   "engines": {
     "node": ">=18"
